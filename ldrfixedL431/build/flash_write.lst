@@ -1,0 +1,585 @@
+ARM GAS  /tmp/ccrAlcSh.s 			page 1
+
+
+   1              		.syntax unified
+   2              		.cpu cortex-m4
+   3              		.eabi_attribute 27, 1
+   4              		.eabi_attribute 28, 1
+   5              		.fpu fpv4-sp-d16
+   6              		.eabi_attribute 20, 1
+   7              		.eabi_attribute 21, 1
+   8              		.eabi_attribute 23, 3
+   9              		.eabi_attribute 24, 1
+  10              		.eabi_attribute 25, 1
+  11              		.eabi_attribute 26, 1
+  12              		.eabi_attribute 30, 1
+  13              		.eabi_attribute 34, 1
+  14              		.eabi_attribute 18, 4
+  15              		.thumb
+  16              		.syntax unified
+  17              		.file	"flash_write.c"
+  18              		.text
+  19              	.Ltext0:
+  20              		.cfi_sections	.debug_frame
+  21              		.section	.text.flash_write_ram,"ax",%progbits
+  22              		.align	2
+  23              		.global	flash_write_ram
+  24              		.thumb
+  25              		.thumb_func
+  27              	flash_write_ram:
+  28              	.LFB132:
+  29              		.file 1 "Ourtasks/flash_write.c"
+   1:Ourtasks/flash_write.c **** /******************************************************************************
+   2:Ourtasks/flash_write.c **** * File Name          : flash_write.c
+   3:Ourtasks/flash_write.c **** * Date First Issued  : 07/28/2013
+   4:Ourtasks/flash_write.c **** * Board              : ../svn_sensor/hw/trunk/eagle/f103R/RxT6
+   5:Ourtasks/flash_write.c **** * Description        : flash write: small bits of code that execute in ram
+   6:Ourtasks/flash_write.c **** *******************************************************************************/
+   7:Ourtasks/flash_write.c **** /*
+   8:Ourtasks/flash_write.c **** 
+   9:Ourtasks/flash_write.c **** 
+  10:Ourtasks/flash_write.c **** */
+  11:Ourtasks/flash_write.c **** #include "stm32l431xx.h"
+  12:Ourtasks/flash_write.c **** #include "flash_write.h"
+  13:Ourtasks/flash_write.c **** /******************************************************************************
+  14:Ourtasks/flash_write.c ****  * int flash_write_ram(uint16_t *pflash, uint16_t* pfrom, int count);
+  15:Ourtasks/flash_write.c ****  *  @brief 	: Write "count" uint16_t (1/2 words) to flash from ram
+  16:Ourtasks/flash_write.c ****  *  @param	: pflash = 1/2 word pointer to address in flash
+  17:Ourtasks/flash_write.c ****  *  @param	: pfrom = 1/2 word pointer to address with source data
+  18:Ourtasks/flash_write.c ****  *  @param	: count = number of 1/2 words to write
+  19:Ourtasks/flash_write.c ****  *  @return	: zero = success; not zero = failed
+  20:Ourtasks/flash_write.c **** *******************************************************************************/
+  21:Ourtasks/flash_write.c **** /*     The main Flash memory programming sequence in standard mode is as follows:
+  22:Ourtasks/flash_write.c ****       ●    Check that no main Flash memory operation is ongoing by checking the BSY bit in the
+  23:Ourtasks/flash_write.c ****            FLASH_SR register.
+  24:Ourtasks/flash_write.c ****       ●    Set the PG bit in the FLASH_CR register.
+  25:Ourtasks/flash_write.c ****       ●    Perform the data write (half-word) at the desired address.
+  26:Ourtasks/flash_write.c ****       ●    Wait for the BSY bit to be reset.
+  27:Ourtasks/flash_write.c ****       ●    Read the programmed value and verify.
+  28:Ourtasks/flash_write.c **** Note: The registers are not accessible in write mode when the BSY bit of the FLASH_SR register
+  29:Ourtasks/flash_write.c ****       is set.
+ARM GAS  /tmp/ccrAlcSh.s 			page 2
+
+
+  30:Ourtasks/flash_write.c **** */
+  31:Ourtasks/flash_write.c **** int flash_write_ram(uint16_t *pflash, uint16_t *pfrom, int count)
+  32:Ourtasks/flash_write.c **** {
+  30              		.loc 1 32 0
+  31              		.cfi_startproc
+  32              		@ args = 0, pretend = 0, frame = 0
+  33              		@ frame_needed = 0, uses_anonymous_args = 0
+  34              		@ link register save eliminated.
+  35              	.LVL0:
+  36 0000 10B4     		push	{r4}
+  37              	.LCFI0:
+  38              		.cfi_def_cfa_offset 4
+  39              		.cfi_offset 4, -4
+  33:Ourtasks/flash_write.c **** 	while (count > 0)
+  40              		.loc 1 33 0
+  41 0002 1AE0     		b	.L2
+  42              	.L3:
+  34:Ourtasks/flash_write.c **** 	{
+  35:Ourtasks/flash_write.c **** 		while ((FLASH->SR & 0x1) != 0);
+  43              		.loc 1 35 0 discriminator 1
+  44 0004 104B     		ldr	r3, .L6
+  45 0006 1B69     		ldr	r3, [r3, #16]
+  46 0008 13F0010F 		tst	r3, #1
+  47 000c FAD1     		bne	.L3
+  36:Ourtasks/flash_write.c **** 		FLASH->CR |= 1;	// Set program bit
+  48              		.loc 1 36 0
+  49 000e 0E4C     		ldr	r4, .L6
+  50 0010 6369     		ldr	r3, [r4, #20]
+  51 0012 43F00103 		orr	r3, r3, #1
+  52 0016 6361     		str	r3, [r4, #20]
+  53              	.LVL1:
+  37:Ourtasks/flash_write.c **** 		*pflash++ = *pfrom++;
+  54              		.loc 1 37 0
+  55 0018 0B88     		ldrh	r3, [r1]
+  56 001a 0380     		strh	r3, [r0]	@ movhi
+  57              	.L4:
+  38:Ourtasks/flash_write.c **** 		while ((FLASH->SR & 0x1) != 0);
+  58              		.loc 1 38 0 discriminator 1
+  59 001c 0A4B     		ldr	r3, .L6
+  60 001e 1B69     		ldr	r3, [r3, #16]
+  61 0020 13F0010F 		tst	r3, #1
+  62 0024 FAD1     		bne	.L4
+  39:Ourtasks/flash_write.c **** 		FLASH->CR |= 1;	// Set program bit
+  63              		.loc 1 39 0
+  64 0026 084C     		ldr	r4, .L6
+  65 0028 6369     		ldr	r3, [r4, #20]
+  66 002a 43F00103 		orr	r3, r3, #1
+  67 002e 6361     		str	r3, [r4, #20]
+  68              	.LVL2:
+  40:Ourtasks/flash_write.c **** 		*pflash++ = *pfrom++;
+  69              		.loc 1 40 0
+  70 0030 4B88     		ldrh	r3, [r1, #2]
+  71 0032 4380     		strh	r3, [r0, #2]	@ movhi
+  41:Ourtasks/flash_write.c **** 		count--;
+  72              		.loc 1 41 0
+  73 0034 013A     		subs	r2, r2, #1
+  74              	.LVL3:
+ARM GAS  /tmp/ccrAlcSh.s 			page 3
+
+
+  40:Ourtasks/flash_write.c **** 		*pflash++ = *pfrom++;
+  75              		.loc 1 40 0
+  76 0036 0431     		adds	r1, r1, #4
+  77              	.LVL4:
+  78 0038 0430     		adds	r0, r0, #4
+  79              	.LVL5:
+  80              	.L2:
+  33:Ourtasks/flash_write.c **** 	{
+  81              		.loc 1 33 0
+  82 003a 002A     		cmp	r2, #0
+  83 003c E2DC     		bgt	.L3
+  42:Ourtasks/flash_write.c **** 	}
+  43:Ourtasks/flash_write.c **** 	
+  44:Ourtasks/flash_write.c **** 	return 0;	
+  45:Ourtasks/flash_write.c **** }
+  84              		.loc 1 45 0
+  85 003e 0020     		movs	r0, #0
+  86              	.LVL6:
+  87 0040 5DF8044B 		ldr	r4, [sp], #4
+  88              	.LCFI1:
+  89              		.cfi_restore 4
+  90              		.cfi_def_cfa_offset 0
+  91 0044 7047     		bx	lr
+  92              	.L7:
+  93 0046 00BF     		.align	2
+  94              	.L6:
+  95 0048 00200240 		.word	1073881088
+  96              		.cfi_endproc
+  97              	.LFE132:
+  99              		.section	.text.flash_unlock,"ax",%progbits
+ 100              		.align	2
+ 101              		.global	flash_unlock
+ 102              		.thumb
+ 103              		.thumb_func
+ 105              	flash_unlock:
+ 106              	.LFB133:
+  46:Ourtasks/flash_write.c **** 
+  47:Ourtasks/flash_write.c **** /******************************************************************************
+  48:Ourtasks/flash_write.c ****  *  int flash_unlock(uint32_t address);
+  49:Ourtasks/flash_write.c ****  *  @brief 	: Perform unlock sequence
+  50:Ourtasks/flash_write.c ****  *  @return	: 0 = unlocked; not zero = failed and locked until next reset.
+  51:Ourtasks/flash_write.c **** *******************************************************************************/
+  52:Ourtasks/flash_write.c **** #define FLASH_RDPRT_KEY 0x00A5	// Protection code
+  53:Ourtasks/flash_write.c **** #define FLASH_KEY1  0x45670123	// Unlock 1st
+  54:Ourtasks/flash_write.c **** #define FLASH_KEY2  0xCDEF89AB	// Unlock 2nd
+  55:Ourtasks/flash_write.c **** 
+  56:Ourtasks/flash_write.c **** int flash_unlock(void)
+  57:Ourtasks/flash_write.c **** {
+ 107              		.loc 1 57 0
+ 108              		.cfi_startproc
+ 109              		@ args = 0, pretend = 0, frame = 0
+ 110              		@ frame_needed = 0, uses_anonymous_args = 0
+ 111              		@ link register save eliminated.
+  58:Ourtasks/flash_write.c **** 	FLASH->KEYR = FLASH_KEY1;
+ 112              		.loc 1 58 0
+ 113 0000 044B     		ldr	r3, .L9
+ 114 0002 054A     		ldr	r2, .L9+4
+ARM GAS  /tmp/ccrAlcSh.s 			page 4
+
+
+ 115 0004 9A60     		str	r2, [r3, #8]
+  59:Ourtasks/flash_write.c **** 	FLASH->KEYR = FLASH_KEY2;
+ 116              		.loc 1 59 0
+ 117 0006 02F18832 		add	r2, r2, #-2004318072
+ 118 000a 9A60     		str	r2, [r3, #8]
+  60:Ourtasks/flash_write.c **** 	return (FLASH->CR & FLASH_CR_LOCK);
+ 119              		.loc 1 60 0
+ 120 000c 5869     		ldr	r0, [r3, #20]
+  61:Ourtasks/flash_write.c **** }
+ 121              		.loc 1 61 0
+ 122 000e 00F00040 		and	r0, r0, #-2147483648
+ 123 0012 7047     		bx	lr
+ 124              	.L10:
+ 125              		.align	2
+ 126              	.L9:
+ 127 0014 00200240 		.word	1073881088
+ 128 0018 23016745 		.word	1164378403
+ 129              		.cfi_endproc
+ 130              	.LFE133:
+ 132              		.section	.text.flash_write,"ax",%progbits
+ 133              		.align	2
+ 134              		.global	flash_write
+ 135              		.thumb
+ 136              		.thumb_func
+ 138              	flash_write:
+ 139              	.LFB134:
+  62:Ourtasks/flash_write.c **** #ifdef TWO_FLASH_BANKS
+  63:Ourtasks/flash_write.c **** int flash_unlock2(void)
+  64:Ourtasks/flash_write.c **** {
+  65:Ourtasks/flash_write.c **** 	FLASH->KEYR2 = FLASH_KEY1;
+  66:Ourtasks/flash_write.c **** 	FLASH->KEYR2 = FLASH_KEY2;
+  67:Ourtasks/flash_write.c **** 	return (FLASH->CR2 & FLASH_CR_LOCK);
+  68:Ourtasks/flash_write.c **** }
+  69:Ourtasks/flash_write.c **** #endif
+  70:Ourtasks/flash_write.c **** 
+  71:Ourtasks/flash_write.c **** /******************************************************************************
+  72:Ourtasks/flash_write.c ****  * int flash_write(uint16_t *pflash, uint16_t *pfrom, int count);
+  73:Ourtasks/flash_write.c ****  *  @brief 	: Write "count" uint16_t (1/2 words) to flash
+  74:Ourtasks/flash_write.c ****  *  @param	: pflash = 1/2 word pointer to address in flash
+  75:Ourtasks/flash_write.c ****  *  @param	: pfrom = 1/2 word pointer to address with source data
+  76:Ourtasks/flash_write.c ****  *  @param	: count = number of 1/2 words to write
+  77:Ourtasks/flash_write.c ****  *  @return	: 
+  78:Ourtasks/flash_write.c ****  *           0 = success
+  79:Ourtasks/flash_write.c ****  *          -1 = address greater than 1 MB
+  80:Ourtasks/flash_write.c ****  *          -2 = unlock sequence failed for upper bank
+  81:Ourtasks/flash_write.c ****  *          -3 = address below start of ram.
+  82:Ourtasks/flash_write.c ****  *          -4 = unlock sequence failed for lower bank
+  83:Ourtasks/flash_write.c ****  *          -5 = error at some point in the writes, flash_err has the bits
+  84:Ourtasks/flash_write.c **** *******************************************************************************/
+  85:Ourtasks/flash_write.c **** uint32_t flash_err;
+  86:Ourtasks/flash_write.c **** int flash_write(uint16_t *pflash, uint16_t *pfrom, int count)
+  87:Ourtasks/flash_write.c **** {
+ 140              		.loc 1 87 0
+ 141              		.cfi_startproc
+ 142              		@ args = 0, pretend = 0, frame = 0
+ 143              		@ frame_needed = 0, uses_anonymous_args = 0
+ 144              	.LVL7:
+ARM GAS  /tmp/ccrAlcSh.s 			page 5
+
+
+ 145 0000 F8B5     		push	{r3, r4, r5, r6, r7, lr}
+ 146              	.LCFI2:
+ 147              		.cfi_def_cfa_offset 24
+ 148              		.cfi_offset 3, -24
+ 149              		.cfi_offset 4, -20
+ 150              		.cfi_offset 5, -16
+ 151              		.cfi_offset 6, -12
+ 152              		.cfi_offset 7, -8
+ 153              		.cfi_offset 14, -4
+ 154 0002 0446     		mov	r4, r0
+ 155 0004 0F46     		mov	r7, r1
+ 156 0006 1646     		mov	r6, r2
+  88:Ourtasks/flash_write.c **** 	int i;
+  89:Ourtasks/flash_write.c **** 	flash_err = 0;
+ 157              		.loc 1 89 0
+ 158 0008 0025     		movs	r5, #0
+ 159 000a 1B4B     		ldr	r3, .L21
+ 160 000c 1D60     		str	r5, [r3]
+ 161              	.LVL8:
+  90:Ourtasks/flash_write.c **** 	for (i = 0; i < count; i++)
+ 162              		.loc 1 90 0
+ 163 000e 21E0     		b	.L12
+ 164              	.LVL9:
+ 165              	.L16:
+  91:Ourtasks/flash_write.c **** 	{
+  92:Ourtasks/flash_write.c **** #ifdef TWO_FLASH_BANKS
+  93:Ourtasks/flash_write.c **** 
+  94:Ourtasks/flash_write.c **** 		if (pflash >= (uint16_t*)0x08080000)
+  95:Ourtasks/flash_write.c **** 		{ // Here maybe 2nd bank
+  96:Ourtasks/flash_write.c **** 			if (pflash > (uint16_t*)0x080FFFFe)  return -1;
+  97:Ourtasks/flash_write.c **** 			while ((FLASH->SR2 & 0x1) != 0);	// Wait for busy to go away
+  98:Ourtasks/flash_write.c **** 			if (flash_unlock2() != 0) return -2;
+  99:Ourtasks/flash_write.c **** 			FLASH->SR2 = (FLASH_EOP | FLASH_WRPRTERR | FLASH_PGERR); // Clear any error bits
+ 100:Ourtasks/flash_write.c **** 			FLASH->CR2 = FLASH_PG;		// Set program bit
+ 101:Ourtasks/flash_write.c **** 			*pflash++ = *pfrom++;		// Program the 1/2 word
+ 102:Ourtasks/flash_write.c **** 			while ((FLASH->SR2 & 0x1) != 0);	// Wait for busy to go away
+ 103:Ourtasks/flash_write.c **** 			flash_err |= FLASH->SR2;			
+ 104:Ourtasks/flash_write.c **** 		}
+ 105:Ourtasks/flash_write.c **** 		else
+ 106:Ourtasks/flash_write.c **** #endif			
+ 107:Ourtasks/flash_write.c **** 		{ // Here maybe 1st bank
+ 108:Ourtasks/flash_write.c **** 			if (pflash < (uint16_t*)0x0800000)  return -3;
+ 166              		.loc 1 108 0
+ 167 0010 B4F5000F 		cmp	r4, #8388608
+ 168 0014 28D3     		bcc	.L17
+ 169              	.L14:
+ 109:Ourtasks/flash_write.c **** 			while ((FLASH->SR & 0x1) != 0);	// Wait for busy to go away
+ 170              		.loc 1 109 0 discriminator 1
+ 171 0016 194B     		ldr	r3, .L21+4
+ 172 0018 1B69     		ldr	r3, [r3, #16]
+ 173 001a 13F0010F 		tst	r3, #1
+ 174 001e FAD1     		bne	.L14
+ 110:Ourtasks/flash_write.c **** 			if (flash_unlock() != 0) return -4;
+ 175              		.loc 1 110 0
+ 176 0020 FFF7FEFF 		bl	flash_unlock
+ 177              	.LVL10:
+ 178 0024 18BB     		cbnz	r0, .L18
+ARM GAS  /tmp/ccrAlcSh.s 			page 6
+
+
+ 111:Ourtasks/flash_write.c **** 			FLASH->SR = (FLASH_SR_EOP | FLASH_SR_WRPERR | FLASH_SR_PROGERR); // Clear any error bits
+ 179              		.loc 1 111 0
+ 180 0026 154B     		ldr	r3, .L21+4
+ 181 0028 1922     		movs	r2, #25
+ 182 002a 1A61     		str	r2, [r3, #16]
+ 112:Ourtasks/flash_write.c **** 			FLASH->CR = FLASH_SR_PGAERR;		// Set program bit
+ 183              		.loc 1 112 0
+ 184 002c 2022     		movs	r2, #32
+ 185 002e 5A61     		str	r2, [r3, #20]
+ 113:Ourtasks/flash_write.c **** 			*pflash++ = *pfrom++;		// Program the 1/2 word
+ 186              		.loc 1 113 0
+ 187 0030 A11C     		adds	r1, r4, #2
+ 188              	.LVL11:
+ 189 0032 B81C     		adds	r0, r7, #2
+ 190              	.LVL12:
+ 191 0034 3B88     		ldrh	r3, [r7]
+ 192 0036 2380     		strh	r3, [r4]	@ movhi
+ 193              	.L15:
+ 114:Ourtasks/flash_write.c **** 			while ((FLASH->SR & 0x1) != 0);	// Wait for busy to go away
+ 194              		.loc 1 114 0 discriminator 1
+ 195 0038 104B     		ldr	r3, .L21+4
+ 196 003a 1B69     		ldr	r3, [r3, #16]
+ 197 003c 13F0010F 		tst	r3, #1
+ 198 0040 FAD1     		bne	.L15
+ 115:Ourtasks/flash_write.c **** 			flash_err |= FLASH->SR;			
+ 199              		.loc 1 115 0 discriminator 2
+ 200 0042 0E4B     		ldr	r3, .L21+4
+ 201 0044 1B69     		ldr	r3, [r3, #16]
+ 202 0046 0C4A     		ldr	r2, .L21
+ 203 0048 1468     		ldr	r4, [r2]
+ 204 004a 2343     		orrs	r3, r3, r4
+ 205 004c 1360     		str	r3, [r2]
+  90:Ourtasks/flash_write.c **** 	{
+ 206              		.loc 1 90 0 discriminator 2
+ 207 004e 0135     		adds	r5, r5, #1
+ 208              	.LVL13:
+ 113:Ourtasks/flash_write.c **** 			while ((FLASH->SR & 0x1) != 0);	// Wait for busy to go away
+ 209              		.loc 1 113 0 discriminator 2
+ 210 0050 0746     		mov	r7, r0
+ 211 0052 0C46     		mov	r4, r1
+ 212              	.LVL14:
+ 213              	.L12:
+  90:Ourtasks/flash_write.c **** 	{
+ 214              		.loc 1 90 0 discriminator 1
+ 215 0054 B542     		cmp	r5, r6
+ 216 0056 DBDB     		blt	.L16
+ 116:Ourtasks/flash_write.c **** 		}
+ 117:Ourtasks/flash_write.c **** 	}	
+ 118:Ourtasks/flash_write.c **** 	if ( (flash_err & (FLASH_SR_WRPERR | FLASH_SR_PGAERR)) != 0) return -5;	
+ 217              		.loc 1 118 0
+ 218 0058 074B     		ldr	r3, .L21
+ 219 005a 1B68     		ldr	r3, [r3]
+ 220 005c 13F0300F 		tst	r3, #48
+ 221 0060 08D0     		beq	.L19
+ 222 0062 6FF00400 		mvn	r0, #4
+ 223 0066 F8BD     		pop	{r3, r4, r5, r6, r7, pc}
+ 224              	.LVL15:
+ARM GAS  /tmp/ccrAlcSh.s 			page 7
+
+
+ 225              	.L17:
+ 108:Ourtasks/flash_write.c **** 			while ((FLASH->SR & 0x1) != 0);	// Wait for busy to go away
+ 226              		.loc 1 108 0
+ 227 0068 6FF00200 		mvn	r0, #2
+ 228 006c F8BD     		pop	{r3, r4, r5, r6, r7, pc}
+ 229              	.LVL16:
+ 230              	.L18:
+ 110:Ourtasks/flash_write.c **** 			FLASH->SR = (FLASH_SR_EOP | FLASH_SR_WRPERR | FLASH_SR_PROGERR); // Clear any error bits
+ 231              		.loc 1 110 0
+ 232 006e 6FF00300 		mvn	r0, #3
+ 233 0072 F8BD     		pop	{r3, r4, r5, r6, r7, pc}
+ 234              	.LVL17:
+ 235              	.L19:
+ 119:Ourtasks/flash_write.c **** 	return 0;
+ 236              		.loc 1 119 0
+ 237 0074 0020     		movs	r0, #0
+ 120:Ourtasks/flash_write.c **** }
+ 238              		.loc 1 120 0
+ 239 0076 F8BD     		pop	{r3, r4, r5, r6, r7, pc}
+ 240              	.LVL18:
+ 241              	.L22:
+ 242              		.align	2
+ 243              	.L21:
+ 244 0078 00000000 		.word	flash_err
+ 245 007c 00200240 		.word	1073881088
+ 246              		.cfi_endproc
+ 247              	.LFE134:
+ 249              		.section	.text.flash_erase,"ax",%progbits
+ 250              		.align	2
+ 251              		.global	flash_erase
+ 252              		.thumb
+ 253              		.thumb_func
+ 255              	flash_erase:
+ 256              	.LFB135:
+ 121:Ourtasks/flash_write.c **** /******************************************************************************
+ 122:Ourtasks/flash_write.c ****  * int flash_erase(uint16_t* pflash);
+ 123:Ourtasks/flash_write.c ****  *  @brief 	: Erase one page
+ 124:Ourtasks/flash_write.c ****  *  @param	: pflash = 1/2 word pointer to address in flash
+ 125:Ourtasks/flash_write.c ****  *  @param	: pfrom = 1/2 word pointer to address with source data
+ 126:Ourtasks/flash_write.c ****  *  @return	: 
+ 127:Ourtasks/flash_write.c ****  *           0 = success
+ 128:Ourtasks/flash_write.c ****  *          -1 = address greater than 1 MB
+ 129:Ourtasks/flash_write.c ****  *          -2 = unlock sequence failed for upper bank
+ 130:Ourtasks/flash_write.c ****  *          -3 = address below start of ram.
+ 131:Ourtasks/flash_write.c ****  *          -4 = unlock sequence failed for lower bank
+ 132:Ourtasks/flash_write.c ****  *          -5 = error at some point in the writes, flash_err has the bits
+ 133:Ourtasks/flash_write.c **** *******************************************************************************/
+ 134:Ourtasks/flash_write.c **** /*
+ 135:Ourtasks/flash_write.c **** ● Check that no Flash memory operation is ongoing by checking the BSY bit in the
+ 136:Ourtasks/flash_write.c ****   FLASH_CR register
+ 137:Ourtasks/flash_write.c **** ● Set the PER bit in the FLASH_CR register
+ 138:Ourtasks/flash_write.c **** ● Program the FLASH_AR register to select a page to erase
+ 139:Ourtasks/flash_write.c **** ● Set the STRT bit in the FLASH_CR register
+ 140:Ourtasks/flash_write.c **** ● Wait for the BSY bit to be reset
+ 141:Ourtasks/flash_write.c **** ● Read the erased page and verify
+ 142:Ourtasks/flash_write.c **** */
+ 143:Ourtasks/flash_write.c **** int flash_erase(uint16_t *pflash)
+ARM GAS  /tmp/ccrAlcSh.s 			page 8
+
+
+ 144:Ourtasks/flash_write.c **** {
+ 257              		.loc 1 144 0
+ 258              		.cfi_startproc
+ 259              		@ args = 0, pretend = 0, frame = 0
+ 260              		@ frame_needed = 0, uses_anonymous_args = 0
+ 261              	.LVL19:
+ 262 0000 10B5     		push	{r4, lr}
+ 263              	.LCFI3:
+ 264              		.cfi_def_cfa_offset 8
+ 265              		.cfi_offset 4, -8
+ 266              		.cfi_offset 14, -4
+ 145:Ourtasks/flash_write.c **** 	flash_err = 0;
+ 267              		.loc 1 145 0
+ 268 0002 0022     		movs	r2, #0
+ 269 0004 1B4B     		ldr	r3, .L32
+ 270 0006 1A60     		str	r2, [r3]
+ 146:Ourtasks/flash_write.c **** 	if (pflash >= (uint16_t*)0x08080000)
+ 271              		.loc 1 146 0
+ 272 0008 1B4B     		ldr	r3, .L32+4
+ 273 000a 9842     		cmp	r0, r3
+ 274 000c 22D8     		bhi	.L24
+ 147:Ourtasks/flash_write.c **** 	{ // Here maybe 2nd bank
+ 148:Ourtasks/flash_write.c **** #ifdef TWO_FLASH_BANKS
+ 149:Ourtasks/flash_write.c **** 
+ 150:Ourtasks/flash_write.c **** 		if (pflash > (uint16_t*)0x080FFFFe)  return -1;
+ 151:Ourtasks/flash_write.c **** 		while ((FLASH_SR2 & 0x1) != 0);	// Wait for busy to go away
+ 152:Ourtasks/flash_write.c **** 		if (flash_unlock2() != 0) return -2;
+ 153:Ourtasks/flash_write.c **** 		FLASH_CR2 = FLASH_CR_PER;		// Set Page Erase function
+ 154:Ourtasks/flash_write.c **** 		FLASH_ACR2 = (uint32_t)pflash;	// Set page address
+ 155:Ourtasks/flash_write.c **** 		FLASH_CR2 |= FLASH_CR_STRT;	// Start erase
+ 156:Ourtasks/flash_write.c **** 		while ((FLASH_SR2 & 0x1) != 0);	// Wait for busy to go away
+ 157:Ourtasks/flash_write.c **** 		FLASH_CR2 &= ~FLASH_CR_PER;	// Remove PER bit
+ 158:Ourtasks/flash_write.c **** 		flash_err |= FLASH_SR2;
+ 159:Ourtasks/flash_write.c **** #endif	
+ 160:Ourtasks/flash_write.c **** 	}
+ 161:Ourtasks/flash_write.c **** 	else
+ 162:Ourtasks/flash_write.c **** 	{ // Here maybe 1st bank
+ 163:Ourtasks/flash_write.c **** 		if (pflash < (uint16_t*)0x0800000)  return -3;
+ 275              		.loc 1 163 0
+ 276 000e B0F5000F 		cmp	r0, #8388608
+ 277 0012 27D3     		bcc	.L28
+ 278              	.L26:
+ 164:Ourtasks/flash_write.c **** 		while ((FLASH->SR & 0x1) != 0);	// Wait for busy to go away
+ 279              		.loc 1 164 0 discriminator 1
+ 280 0014 194B     		ldr	r3, .L32+8
+ 281 0016 1B69     		ldr	r3, [r3, #16]
+ 282 0018 13F0010F 		tst	r3, #1
+ 283 001c FAD1     		bne	.L26
+ 284 001e 0446     		mov	r4, r0
+ 165:Ourtasks/flash_write.c **** 		if (flash_unlock() != 0) return -4;
+ 285              		.loc 1 165 0
+ 286 0020 FFF7FEFF 		bl	flash_unlock
+ 287              	.LVL20:
+ 288 0024 08BB     		cbnz	r0, .L29
+ 166:Ourtasks/flash_write.c **** 		FLASH->CR  = FLASH_CR_PER;		// Set Page Erase function
+ 289              		.loc 1 166 0
+ 290 0026 154B     		ldr	r3, .L32+8
+ARM GAS  /tmp/ccrAlcSh.s 			page 9
+
+
+ 291 0028 0222     		movs	r2, #2
+ 292 002a 5A61     		str	r2, [r3, #20]
+ 167:Ourtasks/flash_write.c **** 		FLASH->ACR = (uint32_t)pflash;		// Set page address
+ 293              		.loc 1 167 0
+ 294 002c 1C60     		str	r4, [r3]
+ 168:Ourtasks/flash_write.c **** 		FLASH->CR |= FLASH_CR_STRT;		// Start erase
+ 295              		.loc 1 168 0
+ 296 002e 5A69     		ldr	r2, [r3, #20]
+ 297 0030 42F48032 		orr	r2, r2, #65536
+ 298 0034 5A61     		str	r2, [r3, #20]
+ 299              	.L27:
+ 169:Ourtasks/flash_write.c **** 		while ((FLASH->SR & 0x1) != 0);	// Wait for busy to go away
+ 300              		.loc 1 169 0 discriminator 1
+ 301 0036 114B     		ldr	r3, .L32+8
+ 302 0038 1B69     		ldr	r3, [r3, #16]
+ 303 003a 13F0010F 		tst	r3, #1
+ 304 003e FAD1     		bne	.L27
+ 170:Ourtasks/flash_write.c **** 		FLASH->CR &= ~FLASH_CR_PER;		// Remove PER bit
+ 305              		.loc 1 170 0
+ 306 0040 0E4B     		ldr	r3, .L32+8
+ 307 0042 5A69     		ldr	r2, [r3, #20]
+ 308 0044 22F00202 		bic	r2, r2, #2
+ 309 0048 5A61     		str	r2, [r3, #20]
+ 171:Ourtasks/flash_write.c **** 		flash_err |= FLASH->SR;
+ 310              		.loc 1 171 0
+ 311 004a 1B69     		ldr	r3, [r3, #16]
+ 312 004c 094A     		ldr	r2, .L32
+ 313 004e 1168     		ldr	r1, [r2]
+ 314 0050 0B43     		orrs	r3, r3, r1
+ 315 0052 1360     		str	r3, [r2]
+ 316              	.LVL21:
+ 317              	.L24:
+ 172:Ourtasks/flash_write.c **** 	}
+ 173:Ourtasks/flash_write.c **** 	if ( (flash_err & (FLASH_SR_WRPERR | FLASH_SR_PGAERR)) != 0) return -5;
+ 318              		.loc 1 173 0
+ 319 0054 074B     		ldr	r3, .L32
+ 320 0056 1B68     		ldr	r3, [r3]
+ 321 0058 13F0300F 		tst	r3, #48
+ 322 005c 08D0     		beq	.L30
+ 323 005e 6FF00400 		mvn	r0, #4
+ 324 0062 10BD     		pop	{r4, pc}
+ 325              	.LVL22:
+ 326              	.L28:
+ 163:Ourtasks/flash_write.c **** 		while ((FLASH->SR & 0x1) != 0);	// Wait for busy to go away
+ 327              		.loc 1 163 0
+ 328 0064 6FF00200 		mvn	r0, #2
+ 329              	.LVL23:
+ 330 0068 10BD     		pop	{r4, pc}
+ 331              	.LVL24:
+ 332              	.L29:
+ 165:Ourtasks/flash_write.c **** 		FLASH->CR  = FLASH_CR_PER;		// Set Page Erase function
+ 333              		.loc 1 165 0
+ 334 006a 6FF00300 		mvn	r0, #3
+ 335 006e 10BD     		pop	{r4, pc}
+ 336              	.LVL25:
+ 337              	.L30:
+ 174:Ourtasks/flash_write.c **** 	return 0;
+ARM GAS  /tmp/ccrAlcSh.s 			page 10
+
+
+ 338              		.loc 1 174 0
+ 339 0070 0020     		movs	r0, #0
+ 175:Ourtasks/flash_write.c **** }
+ 340              		.loc 1 175 0
+ 341 0072 10BD     		pop	{r4, pc}
+ 342              	.L33:
+ 343              		.align	2
+ 344              	.L32:
+ 345 0074 00000000 		.word	flash_err
+ 346 0078 FFFF0708 		.word	134742015
+ 347 007c 00200240 		.word	1073881088
+ 348              		.cfi_endproc
+ 349              	.LFE135:
+ 351              		.comm	flash_err,4,4
+ 352              		.text
+ 353              	.Letext0:
+ 354              		.file 2 "/home/deh/launchpad/gcc-arm-none-eabi-5_4-2016q3/arm-none-eabi/include/machine/_default_t
+ 355              		.file 3 "/home/deh/launchpad/gcc-arm-none-eabi-5_4-2016q3/arm-none-eabi/include/sys/_stdint.h"
+ 356              		.file 4 "Drivers/CMSIS/Device/ST/STM32L4xx/Include/stm32l431xx.h"
+ 357              		.file 5 "Drivers/CMSIS/Include/cmsis_gcc.h"
+ 358              		.file 6 "Drivers/CMSIS/Include/core_cm4.h"
+ARM GAS  /tmp/ccrAlcSh.s 			page 11
+
+
+DEFINED SYMBOLS
+                            *ABS*:00000000 flash_write.c
+     /tmp/ccrAlcSh.s:22     .text.flash_write_ram:00000000 $t
+     /tmp/ccrAlcSh.s:27     .text.flash_write_ram:00000000 flash_write_ram
+     /tmp/ccrAlcSh.s:95     .text.flash_write_ram:00000048 $d
+     /tmp/ccrAlcSh.s:100    .text.flash_unlock:00000000 $t
+     /tmp/ccrAlcSh.s:105    .text.flash_unlock:00000000 flash_unlock
+     /tmp/ccrAlcSh.s:127    .text.flash_unlock:00000014 $d
+     /tmp/ccrAlcSh.s:133    .text.flash_write:00000000 $t
+     /tmp/ccrAlcSh.s:138    .text.flash_write:00000000 flash_write
+     /tmp/ccrAlcSh.s:244    .text.flash_write:00000078 $d
+                            *COM*:00000004 flash_err
+     /tmp/ccrAlcSh.s:250    .text.flash_erase:00000000 $t
+     /tmp/ccrAlcSh.s:255    .text.flash_erase:00000000 flash_erase
+     /tmp/ccrAlcSh.s:345    .text.flash_erase:00000074 $d
+                     .debug_frame:00000010 $d
+
+NO UNDEFINED SYMBOLS

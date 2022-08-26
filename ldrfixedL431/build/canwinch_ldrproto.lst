@@ -1,0 +1,3389 @@
+ARM GAS  /tmp/ccRCtQQE.s 			page 1
+
+
+   1              		.syntax unified
+   2              		.cpu cortex-m4
+   3              		.eabi_attribute 27, 1
+   4              		.eabi_attribute 28, 1
+   5              		.fpu fpv4-sp-d16
+   6              		.eabi_attribute 20, 1
+   7              		.eabi_attribute 21, 1
+   8              		.eabi_attribute 23, 3
+   9              		.eabi_attribute 24, 1
+  10              		.eabi_attribute 25, 1
+  11              		.eabi_attribute 26, 1
+  12              		.eabi_attribute 30, 1
+  13              		.eabi_attribute 34, 1
+  14              		.eabi_attribute 18, 4
+  15              		.thumb
+  16              		.syntax unified
+  17              		.file	"canwinch_ldrproto.c"
+  18              		.text
+  19              	.Ltext0:
+  20              		.cfi_sections	.debug_frame
+  21              		.section	.text.flbblkbuff_init,"ax",%progbits
+  22              		.align	2
+  23              		.thumb
+  24              		.thumb_func
+  26              	flbblkbuff_init:
+  27              	.LFB135:
+  28              		.file 1 "Ourtasks/canwinch_ldrproto.c"
+   1:Ourtasks/canwinch_ldrproto.c **** /******************************************************************************
+   2:Ourtasks/canwinch_ldrproto.c **** * File Name          : canwinch_ldrproto.c
+   3:Ourtasks/canwinch_ldrproto.c **** * Date First Issued  : 10/09/2014
+   4:Ourtasks/canwinch_ldrproto.c **** * Board              : RxT6
+   5:Ourtasks/canwinch_ldrproto.c **** * Description        : Loader protocol work
+   6:Ourtasks/canwinch_ldrproto.c **** *******************************************************************************/
+   7:Ourtasks/canwinch_ldrproto.c **** /*
+   8:Ourtasks/canwinch_ldrproto.c **** Notes on timings:
+   9:Ourtasks/canwinch_ldrproto.c **** crc - hardware (word by word) v software (byte by byte)--
+  10:Ourtasks/canwinch_ldrproto.c **** hardware crc-32: 1E6 bytes of flash -> 3.45 sec
+  11:Ourtasks/canwinch_ldrproto.c **** software crc-32: 1E6 bytes of flash -> 17.405 sec
+  12:Ourtasks/canwinch_ldrproto.c **** 
+  13:Ourtasks/canwinch_ldrproto.c **** payload--
+  14:Ourtasks/canwinch_ldrproto.c **** 8 byte payload, 11b CAN ID + interframe -> 139 CAN bits 
+  15:Ourtasks/canwinch_ldrproto.c ****  @ 500,000 bits/sec -> 278 usec
+  16:Ourtasks/canwinch_ldrproto.c **** 1 byte payload, 11b CAN ID + interframe -> 83 CAN bits
+  17:Ourtasks/canwinch_ldrproto.c ****  @ 500,000 bits/sec -> 166 usec
+  18:Ourtasks/canwinch_ldrproto.c **** 
+  19:Ourtasks/canwinch_ldrproto.c **** One XL flash block = 2048 bytes = 256 8 byte payloads
+  20:Ourtasks/canwinch_ldrproto.c **** 256 * 278 usec = 71168 usec
+  21:Ourtasks/canwinch_ldrproto.c ****  add ACK msg = 166 usec -> 71,334 -> 71.3 ms per block
+  22:Ourtasks/canwinch_ldrproto.c **** 
+  23:Ourtasks/canwinch_ldrproto.c **** Plus unknown amount of write flash time.
+  24:Ourtasks/canwinch_ldrproto.c **** 
+  25:Ourtasks/canwinch_ldrproto.c **** */
+  26:Ourtasks/canwinch_ldrproto.c **** #include "stm32l431xx.h"
+  27:Ourtasks/canwinch_ldrproto.c **** #include "canwinch_ldrproto.h"
+  28:Ourtasks/canwinch_ldrproto.c **** //#include "flash_write.h"
+  29:Ourtasks/canwinch_ldrproto.c **** //#include "hwcrc.h"
+  30:Ourtasks/canwinch_ldrproto.c **** //#include "crc-32.h"
+ARM GAS  /tmp/ccRCtQQE.s 			page 2
+
+
+  31:Ourtasks/canwinch_ldrproto.c **** //#include "libopenstm32/usart.h"
+  32:Ourtasks/canwinch_ldrproto.c **** //#include "libusartstm32/usartallproto.h"
+  33:Ourtasks/canwinch_ldrproto.c **** //#include "libmiscstm32/printf.h"
+  34:Ourtasks/canwinch_ldrproto.c **** #include "common_fixedaddress.h"
+  35:Ourtasks/canwinch_ldrproto.c **** #include "db/gen_db.h"
+  36:Ourtasks/canwinch_ldrproto.c **** #include <stdio.h>
+  37:Ourtasks/canwinch_ldrproto.c **** #include "system_reset.h"
+  38:Ourtasks/canwinch_ldrproto.c **** #include "main.h"
+  39:Ourtasks/canwinch_ldrproto.c **** #include "flash_write.h"
+  40:Ourtasks/canwinch_ldrproto.c **** 
+  41:Ourtasks/canwinch_ldrproto.c **** 
+  42:Ourtasks/canwinch_ldrproto.c **** extern struct CAN_CTLBLOCK* pctl1;
+  43:Ourtasks/canwinch_ldrproto.c **** 
+  44:Ourtasks/canwinch_ldrproto.c **** static unsigned int debugPctr = 0;
+  45:Ourtasks/canwinch_ldrproto.c **** 
+  46:Ourtasks/canwinch_ldrproto.c **** /* Address pointer for storing incoming data */
+  47:Ourtasks/canwinch_ldrproto.c **** uint8_t *padd;		// Points to any address that is reasonable--working address
+  48:Ourtasks/canwinch_ldrproto.c **** uint8_t *padd_start;		// Points to any address that is reasonable--address received
+  49:Ourtasks/canwinch_ldrproto.c **** uint32_t sw_padd = 0;	// 0 = address needs to be set before storing; 1 = OK to store
+  50:Ourtasks/canwinch_ldrproto.c **** uint32_t err_bogus_cmds = 0;	// Counter for commands not classified
+  51:Ourtasks/canwinch_ldrproto.c **** uint32_t err_bogus_cmds_cmds = 0; // Counter for Command code undefined
+  52:Ourtasks/canwinch_ldrproto.c **** uint32_t err_novalidadd = 0;	// Counter for data msg with no valid address
+  53:Ourtasks/canwinch_ldrproto.c **** uint8_t* flash_hi; 		// Highest flash address
+  54:Ourtasks/canwinch_ldrproto.c **** 
+  55:Ourtasks/canwinch_ldrproto.c **** #define LARGESTFLBLK	512	// Flash block size (4 byte words)
+  56:Ourtasks/canwinch_ldrproto.c **** 
+  57:Ourtasks/canwinch_ldrproto.c **** union FLUN	// Assure aligment, etc.
+  58:Ourtasks/canwinch_ldrproto.c **** {
+  59:Ourtasks/canwinch_ldrproto.c **** 	unsigned long long  ll[LARGESTFLBLK/2];
+  60:Ourtasks/canwinch_ldrproto.c **** 	uint64_t	u64[LARGESTFLBLK/2]; // 64b (long long)
+  61:Ourtasks/canwinch_ldrproto.c **** 	uint32_t	u32[LARGESTFLBLK  ]; // 32b (words)
+  62:Ourtasks/canwinch_ldrproto.c **** 	uint16_t	u16[LARGESTFLBLK*2]; // 16b (1/2 words)
+  63:Ourtasks/canwinch_ldrproto.c **** 	uint8_t	     u8[LARGESTFLBLK*4]; // bytes
+  64:Ourtasks/canwinch_ldrproto.c **** };
+  65:Ourtasks/canwinch_ldrproto.c **** 
+  66:Ourtasks/canwinch_ldrproto.c **** struct FLBLKBUF	// Working pointers and counts accompanying data for block
+  67:Ourtasks/canwinch_ldrproto.c **** {
+  68:Ourtasks/canwinch_ldrproto.c **** 	union FLUN fb;	// Size of largest flash block (2048 bytes)
+  69:Ourtasks/canwinch_ldrproto.c **** 	uint8_t*	base;		// Flash block base address
+  70:Ourtasks/canwinch_ldrproto.c **** 	uint8_t*	end;		// Flash block end address + 1
+  71:Ourtasks/canwinch_ldrproto.c **** 	uint8_t*	p;		// Byte pointer in flash block
+  72:Ourtasks/canwinch_ldrproto.c **** 	uint16_t	sw;		// Write switch: 0 = skip, 1 = write, 2 = erase and write
+  73:Ourtasks/canwinch_ldrproto.c **** };
+  74:Ourtasks/canwinch_ldrproto.c **** 
+  75:Ourtasks/canwinch_ldrproto.c **** static struct FLBLKBUF flblkbuff;	// Flash block buffer
+  76:Ourtasks/canwinch_ldrproto.c **** 
+  77:Ourtasks/canwinch_ldrproto.c **** uint32_t flashblocksize = 2048;	// 1024, or 2048, 
+  78:Ourtasks/canwinch_ldrproto.c **** uint32_t sw_flash1sttime = 0;	// First time switch for getting flash block
+  79:Ourtasks/canwinch_ldrproto.c **** 
+  80:Ourtasks/canwinch_ldrproto.c **** /* CAN msgs */
+  81:Ourtasks/canwinch_ldrproto.c **** static struct CANRCVBUF can_msg_cmd;	// Commmand
+  82:Ourtasks/canwinch_ldrproto.c **** static struct CANRCVBUF can_msg_rd;	// Read
+  83:Ourtasks/canwinch_ldrproto.c **** static struct CANRCVBUF can_msg_wr;	// Write
+  84:Ourtasks/canwinch_ldrproto.c **** 
+  85:Ourtasks/canwinch_ldrproto.c **** /* Switch that shows if we have a program loading underway and should not jump to an app */
+  86:Ourtasks/canwinch_ldrproto.c **** int ldr_phase = 0;
+  87:Ourtasks/canwinch_ldrproto.c **** 
+ARM GAS  /tmp/ccRCtQQE.s 			page 3
+
+
+  88:Ourtasks/canwinch_ldrproto.c **** /******************************************************************************
+  89:Ourtasks/canwinch_ldrproto.c ****  * static void can_msg_put(struct CANRCVBUF* pcan);
+  90:Ourtasks/canwinch_ldrproto.c ****  * @brief	: send a CAN msg
+  91:Ourtasks/canwinch_ldrproto.c ****  * @param	: pcan = pointer to CAN msg
+  92:Ourtasks/canwinch_ldrproto.c ****  ******************************************************************************/
+  93:Ourtasks/canwinch_ldrproto.c **** static void can_msg_put(struct CANRCVBUF* pcan)
+  94:Ourtasks/canwinch_ldrproto.c **** {
+  95:Ourtasks/canwinch_ldrproto.c **** 	can_driver_put(pctl1, pcan, 4, 0);
+  96:Ourtasks/canwinch_ldrproto.c **** }
+  97:Ourtasks/canwinch_ldrproto.c **** /******************************************************************************
+  98:Ourtasks/canwinch_ldrproto.c ****  * static void sendcanCMD(uint8_t cmd);
+  99:Ourtasks/canwinch_ldrproto.c ****  * @brief	: send a CAN msg with a command byte
+ 100:Ourtasks/canwinch_ldrproto.c ****  * @param	: cmd = command code
+ 101:Ourtasks/canwinch_ldrproto.c ****  ******************************************************************************/
+ 102:Ourtasks/canwinch_ldrproto.c **** static void sendcanCMD(uint8_t cmd)
+ 103:Ourtasks/canwinch_ldrproto.c **** {
+ 104:Ourtasks/canwinch_ldrproto.c **** 	
+ 105:Ourtasks/canwinch_ldrproto.c **** 	can_msg_cmd.dlc = 1;
+ 106:Ourtasks/canwinch_ldrproto.c **** 	can_msg_cmd.cd.uc[0] = cmd;
+ 107:Ourtasks/canwinch_ldrproto.c **** 	can_msg_put(&can_msg_cmd);
+ 108:Ourtasks/canwinch_ldrproto.c **** 	return;
+ 109:Ourtasks/canwinch_ldrproto.c **** }
+ 110:Ourtasks/canwinch_ldrproto.c **** /* **************************************************************************************
+ 111:Ourtasks/canwinch_ldrproto.c ****  * static void flbblkbuff_init(void);
+ 112:Ourtasks/canwinch_ldrproto.c ****  * @brief	: Initialize flash block buffer struct
+ 113:Ourtasks/canwinch_ldrproto.c ****  * ************************************************************************************** */
+ 114:Ourtasks/canwinch_ldrproto.c **** static void flbblkbuff_init(void)
+ 115:Ourtasks/canwinch_ldrproto.c **** {
+  29              		.loc 1 115 0
+  30              		.cfi_startproc
+  31              		@ args = 0, pretend = 0, frame = 0
+  32              		@ frame_needed = 0, uses_anonymous_args = 0
+  33              		@ link register save eliminated.
+ 116:Ourtasks/canwinch_ldrproto.c **** 
+ 117:Ourtasks/canwinch_ldrproto.c **** 	/* Assure start address for block is on an even boundary */
+ 118:Ourtasks/canwinch_ldrproto.c **** 	flblkbuff.base = (uint8_t*)((uint32_t)(padd) & (flashblocksize - 1));
+  34              		.loc 1 118 0
+  35 0000 074B     		ldr	r3, .L2
+  36 0002 1A68     		ldr	r2, [r3]
+  37 0004 013A     		subs	r2, r2, #1
+  38 0006 074B     		ldr	r3, .L2+4
+  39 0008 1B68     		ldr	r3, [r3]
+  40 000a 1A40     		ands	r2, r2, r3
+  41 000c 064B     		ldr	r3, .L2+8
+  42 000e C3F80028 		str	r2, [r3, #2048]
+ 119:Ourtasks/canwinch_ldrproto.c **** 
+ 120:Ourtasks/canwinch_ldrproto.c **** 	flblkbuff.p = &flblkbuff.fb.u8[0]; // Pointer into flash block
+  43              		.loc 1 120 0
+  44 0012 C3F80838 		str	r3, [r3, #2056]
+ 121:Ourtasks/canwinch_ldrproto.c **** 	flblkbuff.sw = 0;	// need to write, or erase and write, switch
+  45              		.loc 1 121 0
+  46 0016 0022     		movs	r2, #0
+  47 0018 A3F80C28 		strh	r2, [r3, #2060]	@ movhi
+  48 001c 7047     		bx	lr
+  49              	.L3:
+  50 001e 00BF     		.align	2
+  51              	.L2:
+ARM GAS  /tmp/ccRCtQQE.s 			page 4
+
+
+  52 0020 00000000 		.word	.LANCHOR0
+  53 0024 00000000 		.word	padd
+  54 0028 00000000 		.word	.LANCHOR1
+  55              		.cfi_endproc
+  56              	.LFE135:
+  58              		.section	.text.flashblockinit,"ax",%progbits
+  59              		.align	2
+  60              		.thumb
+  61              		.thumb_func
+  63              	flashblockinit:
+  64              	.LFB144:
+ 122:Ourtasks/canwinch_ldrproto.c **** 
+ 123:Ourtasks/canwinch_ldrproto.c **** 	return;
+ 124:Ourtasks/canwinch_ldrproto.c **** }
+ 125:Ourtasks/canwinch_ldrproto.c **** /* **************************************************************************************
+ 126:Ourtasks/canwinch_ldrproto.c ****  * void canwinch_ldrproto_init(uint32_t iamunitnumber);
+ 127:Ourtasks/canwinch_ldrproto.c ****  * @brief	: Initialization for loader
+ 128:Ourtasks/canwinch_ldrproto.c ****  * @param	: Unit number 
+ 129:Ourtasks/canwinch_ldrproto.c ****  * ************************************************************************************** */
+ 130:Ourtasks/canwinch_ldrproto.c **** void canwinch_ldrproto_init(uint32_t iamunitnumber)
+ 131:Ourtasks/canwinch_ldrproto.c **** {
+ 132:Ourtasks/canwinch_ldrproto.c **** 	padd = (uint8_t*)(0x08000000);	// Set to something that doesn't give a bad address error
+ 133:Ourtasks/canwinch_ldrproto.c **** 
+ 134:Ourtasks/canwinch_ldrproto.c **** 	/* Flash block size */
+ 135:Ourtasks/canwinch_ldrproto.c **** 	flashblocksize = 2048;	// XL series flash block size
+ 136:Ourtasks/canwinch_ldrproto.c **** 
+ 137:Ourtasks/canwinch_ldrproto.c **** 	/* Highest flash address plus one = lowest + (flash size(kbytes) * 1024)  */
+ 138:Ourtasks/canwinch_ldrproto.c **** 	flash_hi = (uint8_t*)(0x08000000 + (*(uint16_t*)ADDR_FLASH_SIZE << 10) );
+ 139:Ourtasks/canwinch_ldrproto.c **** 
+ 140:Ourtasks/canwinch_ldrproto.c **** 	flbblkbuff_init(); // Set initial pointer.
+ 141:Ourtasks/canwinch_ldrproto.c **** 
+ 142:Ourtasks/canwinch_ldrproto.c **** printf("FLASH BLK SZE: %dB\n\r",(unsigned int)flashblocksize);
+ 143:Ourtasks/canwinch_ldrproto.c **** printf("FLASH HI ADDR: 0x%08X\n\r",(unsigned int)flash_hi);
+ 144:Ourtasks/canwinch_ldrproto.c **** 
+ 145:Ourtasks/canwinch_ldrproto.c **** 	/* Set fixed part of CAN msgs */
+ 146:Ourtasks/canwinch_ldrproto.c **** 	can_msg_cmd.id = iamunitnumber; // Command
+ 147:Ourtasks/canwinch_ldrproto.c **** 	can_msg_rd.id  = iamunitnumber; // Read
+ 148:Ourtasks/canwinch_ldrproto.c **** 	can_msg_wr.id  = iamunitnumber; // Write
+ 149:Ourtasks/canwinch_ldrproto.c **** 
+ 150:Ourtasks/canwinch_ldrproto.c **** printf("CAN ID's\n\r");
+ 151:Ourtasks/canwinch_ldrproto.c **** printf( "CMD: %08X\n\r",(unsigned int)can_msg_cmd.id);
+ 152:Ourtasks/canwinch_ldrproto.c **** printf( "RD : %08X\n\r",(unsigned int)can_msg_rd.id);
+ 153:Ourtasks/canwinch_ldrproto.c **** printf( "WR : %08X\n\r",(unsigned int)can_msg_wr.id);
+ 154:Ourtasks/canwinch_ldrproto.c **** 
+ 155:Ourtasks/canwinch_ldrproto.c **** 	return;
+ 156:Ourtasks/canwinch_ldrproto.c **** }
+ 157:Ourtasks/canwinch_ldrproto.c **** /* **************************************************************************************
+ 158:Ourtasks/canwinch_ldrproto.c ****  * uint16_t mv2(uint8_t* p2);
+ 159:Ourtasks/canwinch_ldrproto.c ****  * @brief	: Convert 2 bytes into a 1/2 word
+ 160:Ourtasks/canwinch_ldrproto.c ****  * uint32_t mv4(uint8_t* p2);
+ 161:Ourtasks/canwinch_ldrproto.c ****  * @brief	: Convert 4 bytes into a word
+ 162:Ourtasks/canwinch_ldrproto.c **** 
+ 163:Ourtasks/canwinch_ldrproto.c ****  * ************************************************************************************** */
+ 164:Ourtasks/canwinch_ldrproto.c **** uint16_t mv2(uint8_t* p2){ return ( *(p2+1)<<8 | *p2 ); }
+ 165:Ourtasks/canwinch_ldrproto.c **** uint32_t mv4(uint8_t* p2){ return ( *(p2+3)<<24 | *(p2+2)<<16 | *(p2+1)<<8 | *p2 ); }
+ 166:Ourtasks/canwinch_ldrproto.c **** 
+ 167:Ourtasks/canwinch_ldrproto.c **** /* **************************************************************************************
+ARM GAS  /tmp/ccRCtQQE.s 			page 5
+
+
+ 168:Ourtasks/canwinch_ldrproto.c ****  * static int do_jump(struct CANRCVBUF* p);
+ 169:Ourtasks/canwinch_ldrproto.c ****  * @brief	: Check and execute a JUMP command
+ 170:Ourtasks/canwinch_ldrproto.c ****  * @param	: p = pointer to message buffer
+ 171:Ourtasks/canwinch_ldrproto.c ****  * ************************************************************************************** */
+ 172:Ourtasks/canwinch_ldrproto.c **** static int do_jump(struct CANRCVBUF* p)
+ 173:Ourtasks/canwinch_ldrproto.c **** {
+ 174:Ourtasks/canwinch_ldrproto.c **** 	uint32_t appjump;
+ 175:Ourtasks/canwinch_ldrproto.c **** 
+ 176:Ourtasks/canwinch_ldrproto.c **** 	/* Check for correct number of bytes in payload. */
+ 177:Ourtasks/canwinch_ldrproto.c **** 	if (p->dlc != 4) return -1;
+ 178:Ourtasks/canwinch_ldrproto.c **** 
+ 179:Ourtasks/canwinch_ldrproto.c **** 	/* Convert byte array to 4 byte unsigned int */
+ 180:Ourtasks/canwinch_ldrproto.c **** 	 appjump = mv4(&p->cd.u8[0]); 
+ 181:Ourtasks/canwinch_ldrproto.c **** 
+ 182:Ourtasks/canwinch_ldrproto.c **** 	(*(  (void (**)(void))appjump)  )();	// Indirect jump via vector address
+ 183:Ourtasks/canwinch_ldrproto.c **** 
+ 184:Ourtasks/canwinch_ldrproto.c **** 	return 0;	// We should never get here!
+ 185:Ourtasks/canwinch_ldrproto.c **** }
+ 186:Ourtasks/canwinch_ldrproto.c **** /* **************************************************************************************
+ 187:Ourtasks/canwinch_ldrproto.c ****  * void do_dataread(struct CANRCVBUF* p);
+ 188:Ourtasks/canwinch_ldrproto.c ****  * @brief	: Do something!
+ 189:Ourtasks/canwinch_ldrproto.c ****  * @param	: Point to message buffer
+ 190:Ourtasks/canwinch_ldrproto.c ****  * ************************************************************************************** */
+ 191:Ourtasks/canwinch_ldrproto.c **** void do_dataread(struct CANRCVBUF* p)
+ 192:Ourtasks/canwinch_ldrproto.c **** {
+ 193:Ourtasks/canwinch_ldrproto.c **** 	uint32_t i;
+ 194:Ourtasks/canwinch_ldrproto.c **** 	/* We will assume the bozo asking for read has set a valid address.  If the address
+ 195:Ourtasks/canwinch_ldrproto.c ****            is not valid there might be a hard fault/invalid address crash and a power cycling \
+ 196:Ourtasks/canwinch_ldrproto.c ****            to recover would be needed. */
+ 197:Ourtasks/canwinch_ldrproto.c **** 	uint32_t count = p->dlc & 0xf;	// Get the byte count request
+ 198:Ourtasks/canwinch_ldrproto.c **** 	
+ 199:Ourtasks/canwinch_ldrproto.c **** 	if (count > 8)
+ 200:Ourtasks/canwinch_ldrproto.c **** 	{ // In case we got a bogus byte count
+ 201:Ourtasks/canwinch_ldrproto.c **** 		count = 8;
+ 202:Ourtasks/canwinch_ldrproto.c **** 	}
+ 203:Ourtasks/canwinch_ldrproto.c **** 	for (i = 0; i < count; i++)
+ 204:Ourtasks/canwinch_ldrproto.c **** 	{
+ 205:Ourtasks/canwinch_ldrproto.c **** 		p->cd.uc[i] = *padd++;
+ 206:Ourtasks/canwinch_ldrproto.c **** 	}
+ 207:Ourtasks/canwinch_ldrproto.c **** 		can_msg_put(p);	// Set it up for tranmission
+ 208:Ourtasks/canwinch_ldrproto.c **** 	
+ 209:Ourtasks/canwinch_ldrproto.c **** 	return;
+ 210:Ourtasks/canwinch_ldrproto.c **** }
+ 211:Ourtasks/canwinch_ldrproto.c **** /* **************************************************************************************
+ 212:Ourtasks/canwinch_ldrproto.c ****  * static void copypayload(uint8_t* pc, int8_t count);
+ 213:Ourtasks/canwinch_ldrproto.c ****  * @brief	: Copy payload to memory or registers; do 16b or 32b if possible (registers require this)
+ 214:Ourtasks/canwinch_ldrproto.c ****  * @param	: pc = pointer to payload start byte
+ 215:Ourtasks/canwinch_ldrproto.c ****  * @param	: count = dlc after masking
+ 216:Ourtasks/canwinch_ldrproto.c ****  * ************************************************************************************** */
+ 217:Ourtasks/canwinch_ldrproto.c **** /* This vexing routine takes bytes from the CAN payload, which may not be address aligned for
+ 218:Ourtasks/canwinch_ldrproto.c **** 16b, 32b, 64b, and moves them to the largest of these.  This requires checking the low order
+ 219:Ourtasks/canwinch_ldrproto.c **** bits of the address and the number of bytes remaining to be moved to determine which size
+ 220:Ourtasks/canwinch_ldrproto.c **** (16, 32, 64) can be used.  'table' is used to look up the one to use.
+ 221:Ourtasks/canwinch_ldrproto.c **** */
+ 222:Ourtasks/canwinch_ldrproto.c **** const uint8_t table[16] = {2,4,4,8,2,2,2,2,2,4,4,4,2,2,2,2};
+ 223:Ourtasks/canwinch_ldrproto.c **** static void copypayload(uint8_t* pc, int8_t count)
+ 224:Ourtasks/canwinch_ldrproto.c **** {
+ARM GAS  /tmp/ccRCtQQE.s 			page 6
+
+
+ 225:Ourtasks/canwinch_ldrproto.c **** 	uint32_t x;
+ 226:Ourtasks/canwinch_ldrproto.c **** 	if (count < 1 ) return;
+ 227:Ourtasks/canwinch_ldrproto.c **** 	if (count > 8) count = 8;	// JIC	
+ 228:Ourtasks/canwinch_ldrproto.c **** 	count -= 1; // (count = 0 - 7)
+ 229:Ourtasks/canwinch_ldrproto.c **** 
+ 230:Ourtasks/canwinch_ldrproto.c **** 	while (count > 0)	// Loop through the payload
+ 231:Ourtasks/canwinch_ldrproto.c **** 	{
+ 232:Ourtasks/canwinch_ldrproto.c **** 		if ( ((count & 0x1) == 0) || ( ((uint32_t)(padd) & 0x1) != 0) ) // Odd byte count and/or odd addr
+ 233:Ourtasks/canwinch_ldrproto.c **** 		{ // Here, if either are odd, then we must move one byte at a time.
+ 234:Ourtasks/canwinch_ldrproto.c **** 			*padd++ = *pc++; count -= 1;
+ 235:Ourtasks/canwinch_ldrproto.c **** 		}
+ 236:Ourtasks/canwinch_ldrproto.c **** 		else
+ 237:Ourtasks/canwinch_ldrproto.c **** 		{ // Here both count and address are even 
+ 238:Ourtasks/canwinch_ldrproto.c **** 			x = ( ( ( (uint32_t)padd << 1) & 0xc) | ((count >> 1) & 0x3) );
+ 239:Ourtasks/canwinch_ldrproto.c **** 			x &= 0x0f; 	// jic!
+ 240:Ourtasks/canwinch_ldrproto.c **** 			switch (table[x])
+ 241:Ourtasks/canwinch_ldrproto.c **** 			{
+ 242:Ourtasks/canwinch_ldrproto.c **** 			case 2:	// Move 1/2 words (2 bytes)
+ 243:Ourtasks/canwinch_ldrproto.c **** 				*(uint8_t*)padd = mv2(pc); padd +=2; pc +=2; count -= 2;
+ 244:Ourtasks/canwinch_ldrproto.c **** 				break;
+ 245:Ourtasks/canwinch_ldrproto.c **** 
+ 246:Ourtasks/canwinch_ldrproto.c **** 			case 4: // Move words (4 bytes)
+ 247:Ourtasks/canwinch_ldrproto.c **** 				*(uint32_t*)padd = mv4(pc); padd +=4; pc +=4; count -= 4;
+ 248:Ourtasks/canwinch_ldrproto.c **** 				break;
+ 249:Ourtasks/canwinch_ldrproto.c **** 
+ 250:Ourtasks/canwinch_ldrproto.c **** 			case 8: // Move double word (8 bytes)
+ 251:Ourtasks/canwinch_ldrproto.c **** 				*(uint32_t*)padd = mv4(pc); padd +=4; pc +=4; // No need to adjust 'count' as we 'return'
+ 252:Ourtasks/canwinch_ldrproto.c **** 				*(uint32_t*)padd = mv4(pc); padd +=4; pc +=4;
+ 253:Ourtasks/canwinch_ldrproto.c **** 				return;
+ 254:Ourtasks/canwinch_ldrproto.c **** 			}
+ 255:Ourtasks/canwinch_ldrproto.c **** 		}
+ 256:Ourtasks/canwinch_ldrproto.c **** 	}
+ 257:Ourtasks/canwinch_ldrproto.c **** 	return;
+ 258:Ourtasks/canwinch_ldrproto.c **** }
+ 259:Ourtasks/canwinch_ldrproto.c **** /* **************************************************************************************
+ 260:Ourtasks/canwinch_ldrproto.c ****  * int addressOK(uint8_t* pa);
+ 261:Ourtasks/canwinch_ldrproto.c ****  * @brief	: Check that it is legal
+ 262:Ourtasks/canwinch_ldrproto.c ****  * @param	: Address pointer
+ 263:Ourtasks/canwinch_ldrproto.c ****  * @return	: 0 = OK, not zero = bad
+ 264:Ourtasks/canwinch_ldrproto.c ****  * ************************************************************************************** */
+ 265:Ourtasks/canwinch_ldrproto.c **** int addressOK(uint8_t* pa)
+ 266:Ourtasks/canwinch_ldrproto.c **** {
+ 267:Ourtasks/canwinch_ldrproto.c **** 	uint32_t p;
+ 268:Ourtasks/canwinch_ldrproto.c **** 	if ( ((uint32_t)pa > 0x1FFFE000) && ((uint32_t)pa <= 0x1FFFF80F) ) return 0; // Information block
+ 269:Ourtasks/canwinch_ldrproto.c **** 	if (  (uint32_t)pa < 0x08000000) return -1;	// Return below any flash
+ 270:Ourtasks/canwinch_ldrproto.c **** 	p = *(uint32_t*)0x1FFFF7E0;			// Get size of flash in Kbytes
+ 271:Ourtasks/canwinch_ldrproto.c **** 	p = (p << 10); 				// Multiply by 1024 (K)
+ 272:Ourtasks/canwinch_ldrproto.c **** 	if ((uint32_t)pa > p) return -1;		// Above flash for this part
+ 273:Ourtasks/canwinch_ldrproto.c **** 	return 0;
+ 274:Ourtasks/canwinch_ldrproto.c **** }
+ 275:Ourtasks/canwinch_ldrproto.c **** /* **************************************************************************************
+ 276:Ourtasks/canwinch_ldrproto.c ****  * static void wrblk(struct CANRCVBUF* pcan);
+ 277:Ourtasks/canwinch_ldrproto.c ****  * @brief	: Write RAM buffer out to flash
+ 278:Ourtasks/canwinch_ldrproto.c ****  * ************************************************************************************** */
+ 279:Ourtasks/canwinch_ldrproto.c **** static void wrblk(struct CANRCVBUF* pcan)
+ 280:Ourtasks/canwinch_ldrproto.c **** {
+ 281:Ourtasks/canwinch_ldrproto.c **** printf("wrblk: %d %X %X %08X %08X\n\r",(unsigned int)debugPctr, 
+ARM GAS  /tmp/ccRCtQQE.s 			page 7
+
+
+ 282:Ourtasks/canwinch_ldrproto.c **** 	(unsigned int)padd, 
+ 283:Ourtasks/canwinch_ldrproto.c **** 	(unsigned int)pcan->dlc, 
+ 284:Ourtasks/canwinch_ldrproto.c **** 	(unsigned int)pcan->cd.ui[0], 
+ 285:Ourtasks/canwinch_ldrproto.c **** 	(unsigned int)pcan->cd.ui[1]);
+ 286:Ourtasks/canwinch_ldrproto.c **** 
+ 287:Ourtasks/canwinch_ldrproto.c **** 	switch (flblkbuff.sw) 
+ 288:Ourtasks/canwinch_ldrproto.c **** 	{
+ 289:Ourtasks/canwinch_ldrproto.c **** 	case 0:	// Need to write or erase & write?
+ 290:Ourtasks/canwinch_ldrproto.c **** printf("wrblk: CASE 0: no need to write block\n\r");
+ 291:Ourtasks/canwinch_ldrproto.c **** 		break;	// No need to write the block
+ 292:Ourtasks/canwinch_ldrproto.c **** 
+ 293:Ourtasks/canwinch_ldrproto.c **** 	case 2:
+ 294:Ourtasks/canwinch_ldrproto.c **** 	case 3: // Erase block, then write
+ 295:Ourtasks/canwinch_ldrproto.c **** printf("wrblk: CASE 2: erase block before writing\n\r");
+ 296:Ourtasks/canwinch_ldrproto.c **** 		can_msg_cmd.cd.uc[2] = flash_erase((uint16_t*)flblkbuff.base);
+ 297:Ourtasks/canwinch_ldrproto.c **** 
+ 298:Ourtasks/canwinch_ldrproto.c **** 	case 1: // Write, but no need for erase
+ 299:Ourtasks/canwinch_ldrproto.c **** 		can_msg_cmd.cd.uc[1] = flash_write( (uint16_t*)flblkbuff.base, &flblkbuff.fb.u16[0], flashblocksi
+ 300:Ourtasks/canwinch_ldrproto.c **** printf("wrblk: CASE 1: writing block\n\r");
+ 301:Ourtasks/canwinch_ldrproto.c **** 
+ 302:Ourtasks/canwinch_ldrproto.c **** if ((can_msg_cmd.cd.uc[1] != 0) || (can_msg_cmd.cd.uc[2] != 0))
+ 303:Ourtasks/canwinch_ldrproto.c ****  printf("wrblk: pay[1] %X pay[2] %X\n\r",(unsigned int)can_msg_cmd.cd.uc[1], (unsigned int)can_msg_
+ 304:Ourtasks/canwinch_ldrproto.c **** 		break;	
+ 305:Ourtasks/canwinch_ldrproto.c **** 	default:
+ 306:Ourtasks/canwinch_ldrproto.c **** printf("wrblk: default: %d\n\r",(unsigned int)flblkbuff.sw);
+ 307:Ourtasks/canwinch_ldrproto.c **** 	}
+ 308:Ourtasks/canwinch_ldrproto.c **** 	return;
+ 309:Ourtasks/canwinch_ldrproto.c **** }
+ 310:Ourtasks/canwinch_ldrproto.c **** /* **************************************************************************************
+ 311:Ourtasks/canwinch_ldrproto.c ****  * static void flashblockinit(void);
+ 312:Ourtasks/canwinch_ldrproto.c ****  * @brief	: Read in flash block to sram buffer
+ 313:Ourtasks/canwinch_ldrproto.c ****  * ************************************************************************************** */
+ 314:Ourtasks/canwinch_ldrproto.c **** static void flashblockinit(void)
+ 315:Ourtasks/canwinch_ldrproto.c **** {
+  65              		.loc 1 315 0
+  66              		.cfi_startproc
+  67              		@ args = 0, pretend = 0, frame = 0
+  68              		@ frame_needed = 0, uses_anonymous_args = 0
+  69              		@ link register save eliminated.
+  70 0000 10B4     		push	{r4}
+  71              	.LCFI0:
+  72              		.cfi_def_cfa_offset 4
+  73              		.cfi_offset 4, -4
+ 316:Ourtasks/canwinch_ldrproto.c **** 	uint64_t* pt1;	// Beginning address of flash block
+ 317:Ourtasks/canwinch_ldrproto.c **** 	uint64_t* pt2;	// Beginning address of RAM buff
+ 318:Ourtasks/canwinch_ldrproto.c **** 	uint64_t* ptend;	// End+1 of RAM buff
+ 319:Ourtasks/canwinch_ldrproto.c **** 
+ 320:Ourtasks/canwinch_ldrproto.c **** 	/* Load block that padd points to into RAM. */
+ 321:Ourtasks/canwinch_ldrproto.c **** 	pt1 = (uint64_t*)((uint32_t)(padd) & ~(flashblocksize - 1)); 	// Block addr of STM32 memory to be 
+  74              		.loc 1 321 0
+  75 0002 114B     		ldr	r3, .L8
+  76 0004 1C68     		ldr	r4, [r3]
+  77 0006 6242     		negs	r2, r4
+  78 0008 104B     		ldr	r3, .L8+4
+  79 000a 1968     		ldr	r1, [r3]
+  80 000c 0A40     		ands	r2, r2, r1
+  81              	.LVL0:
+ARM GAS  /tmp/ccRCtQQE.s 			page 8
+
+
+ 322:Ourtasks/canwinch_ldrproto.c **** 	flblkbuff.base = (uint8_t*)pt1;				// Pointer to beginning of flash block
+  82              		.loc 1 322 0
+  83 000e 104B     		ldr	r3, .L8+8
+  84 0010 C3F80028 		str	r2, [r3, #2048]
+ 323:Ourtasks/canwinch_ldrproto.c **** 	flblkbuff.end = flblkbuff.base + flashblocksize;	// End + 1
+  85              		.loc 1 323 0
+  86 0014 1019     		adds	r0, r2, r4
+  87 0016 C3F80408 		str	r0, [r3, #2052]
+ 324:Ourtasks/canwinch_ldrproto.c **** 	flblkbuff.p = &flblkbuff.fb.u8[0] + (padd - (uint8_t*)pt1); 	// Pointer to where payload begins st
+  88              		.loc 1 324 0
+  89 001a 891A     		subs	r1, r1, r2
+  90 001c 1944     		add	r1, r1, r3
+  91 001e C3F80818 		str	r1, [r3, #2056]
+ 325:Ourtasks/canwinch_ldrproto.c **** 	flblkbuff.sw = 0;					// Switch for write/erase
+  92              		.loc 1 325 0
+  93 0022 0021     		movs	r1, #0
+  94 0024 A3F80C18 		strh	r1, [r3, #2060]	@ movhi
+  95              	.LVL1:
+ 326:Ourtasks/canwinch_ldrproto.c **** 	pt2 = &flblkbuff.fb.u64[0];				// RAM buffer for block
+ 327:Ourtasks/canwinch_ldrproto.c **** 	ptend = pt2 + (flashblocksize/sizeof(uint64_t)); 		// End+1 of RAM buffer
+  96              		.loc 1 327 0
+  97 0028 24F00704 		bic	r4, r4, #7
+  98 002c 1C44     		add	r4, r4, r3
+  99              	.LVL2:
+ 328:Ourtasks/canwinch_ldrproto.c **** //printf("P0: %X %X %X\n\r",pt1, pt2, ptend);
+ 329:Ourtasks/canwinch_ldrproto.c **** 	while (pt2 < ptend) *pt2++ = *pt1++; 			// Copy flash to RAM buffer
+ 100              		.loc 1 329 0
+ 101 002e 05E0     		b	.L5
+ 102              	.LVL3:
+ 103              	.L6:
+ 104              		.loc 1 329 0 is_stmt 0 discriminator 2
+ 105 0030 D2E90001 		ldrd	r0, [r2]
+ 106 0034 C3E90001 		strd	r0, [r3]
+ 107 0038 0833     		adds	r3, r3, #8
+ 108              	.LVL4:
+ 109 003a 0832     		adds	r2, r2, #8
+ 110              	.LVL5:
+ 111              	.L5:
+ 112              		.loc 1 329 0 discriminator 1
+ 113 003c A342     		cmp	r3, r4
+ 114 003e F7D3     		bcc	.L6
+ 330:Ourtasks/canwinch_ldrproto.c **** //printf("P1: %X %X %X\n\r",pt1, pt2, ptend);
+ 331:Ourtasks/canwinch_ldrproto.c **** 	return;
+ 332:Ourtasks/canwinch_ldrproto.c **** }
+ 115              		.loc 1 332 0 is_stmt 1
+ 116 0040 5DF8044B 		ldr	r4, [sp], #4
+ 117              	.LCFI1:
+ 118              		.cfi_restore 4
+ 119              		.cfi_def_cfa_offset 0
+ 120              	.LVL6:
+ 121 0044 7047     		bx	lr
+ 122              	.L9:
+ 123 0046 00BF     		.align	2
+ 124              	.L8:
+ 125 0048 00000000 		.word	.LANCHOR0
+ 126 004c 00000000 		.word	padd
+ 127 0050 00000000 		.word	.LANCHOR1
+ARM GAS  /tmp/ccRCtQQE.s 			page 9
+
+
+ 128              		.cfi_endproc
+ 129              	.LFE144:
+ 131              		.section	.text.can_msg_put,"ax",%progbits
+ 132              		.align	2
+ 133              		.thumb
+ 134              		.thumb_func
+ 136              	can_msg_put:
+ 137              	.LFB133:
+  94:Ourtasks/canwinch_ldrproto.c **** 	can_driver_put(pctl1, pcan, 4, 0);
+ 138              		.loc 1 94 0
+ 139              		.cfi_startproc
+ 140              		@ args = 0, pretend = 0, frame = 0
+ 141              		@ frame_needed = 0, uses_anonymous_args = 0
+ 142              	.LVL7:
+ 143 0000 08B5     		push	{r3, lr}
+ 144              	.LCFI2:
+ 145              		.cfi_def_cfa_offset 8
+ 146              		.cfi_offset 3, -8
+ 147              		.cfi_offset 14, -4
+  95:Ourtasks/canwinch_ldrproto.c **** }
+ 148              		.loc 1 95 0
+ 149 0002 0023     		movs	r3, #0
+ 150 0004 0422     		movs	r2, #4
+ 151 0006 0146     		mov	r1, r0
+ 152 0008 0248     		ldr	r0, .L12
+ 153              	.LVL8:
+ 154 000a 0068     		ldr	r0, [r0]
+ 155 000c FFF7FEFF 		bl	can_driver_put
+ 156              	.LVL9:
+ 157 0010 08BD     		pop	{r3, pc}
+ 158              	.L13:
+ 159 0012 00BF     		.align	2
+ 160              	.L12:
+ 161 0014 00000000 		.word	pctl1
+ 162              		.cfi_endproc
+ 163              	.LFE133:
+ 165              		.section	.text.sendcanCMD,"ax",%progbits
+ 166              		.align	2
+ 167              		.thumb
+ 168              		.thumb_func
+ 170              	sendcanCMD:
+ 171              	.LFB134:
+ 103:Ourtasks/canwinch_ldrproto.c **** 	
+ 172              		.loc 1 103 0
+ 173              		.cfi_startproc
+ 174              		@ args = 0, pretend = 0, frame = 0
+ 175              		@ frame_needed = 0, uses_anonymous_args = 0
+ 176              	.LVL10:
+ 177 0000 08B5     		push	{r3, lr}
+ 178              	.LCFI3:
+ 179              		.cfi_def_cfa_offset 8
+ 180              		.cfi_offset 3, -8
+ 181              		.cfi_offset 14, -4
+ 105:Ourtasks/canwinch_ldrproto.c **** 	can_msg_cmd.cd.uc[0] = cmd;
+ 182              		.loc 1 105 0
+ 183 0002 044B     		ldr	r3, .L16
+ 184 0004 0122     		movs	r2, #1
+ARM GAS  /tmp/ccRCtQQE.s 			page 10
+
+
+ 185 0006 5A60     		str	r2, [r3, #4]
+ 106:Ourtasks/canwinch_ldrproto.c **** 	can_msg_put(&can_msg_cmd);
+ 186              		.loc 1 106 0
+ 187 0008 1872     		strb	r0, [r3, #8]
+ 107:Ourtasks/canwinch_ldrproto.c **** 	return;
+ 188              		.loc 1 107 0
+ 189 000a 1846     		mov	r0, r3
+ 190              	.LVL11:
+ 191 000c FFF7FEFF 		bl	can_msg_put
+ 192              	.LVL12:
+ 193 0010 08BD     		pop	{r3, pc}
+ 194              	.L17:
+ 195 0012 00BF     		.align	2
+ 196              	.L16:
+ 197 0014 00000000 		.word	.LANCHOR2
+ 198              		.cfi_endproc
+ 199              	.LFE134:
+ 201              		.section	.text.wrblk,"ax",%progbits
+ 202              		.align	2
+ 203              		.thumb
+ 204              		.thumb_func
+ 206              	wrblk:
+ 207              	.LFB143:
+ 280:Ourtasks/canwinch_ldrproto.c **** printf("wrblk: %d %X %X %08X %08X\n\r",(unsigned int)debugPctr, 
+ 208              		.loc 1 280 0
+ 209              		.cfi_startproc
+ 210              		@ args = 0, pretend = 0, frame = 0
+ 211              		@ frame_needed = 0, uses_anonymous_args = 0
+ 212              	.LVL13:
+ 213 0000 10B5     		push	{r4, lr}
+ 214              	.LCFI4:
+ 215              		.cfi_def_cfa_offset 8
+ 216              		.cfi_offset 4, -8
+ 217              		.cfi_offset 14, -4
+ 218 0002 82B0     		sub	sp, sp, #8
+ 219              	.LCFI5:
+ 220              		.cfi_def_cfa_offset 16
+ 283:Ourtasks/canwinch_ldrproto.c **** 	(unsigned int)pcan->cd.ui[0], 
+ 221              		.loc 1 283 0
+ 222 0004 4368     		ldr	r3, [r0, #4]
+ 284:Ourtasks/canwinch_ldrproto.c **** 	(unsigned int)pcan->cd.ui[1]);
+ 223              		.loc 1 284 0
+ 224 0006 8468     		ldr	r4, [r0, #8]
+ 285:Ourtasks/canwinch_ldrproto.c **** 
+ 225              		.loc 1 285 0
+ 226 0008 C068     		ldr	r0, [r0, #12]
+ 227              	.LVL14:
+ 281:Ourtasks/canwinch_ldrproto.c **** 	(unsigned int)padd, 
+ 228              		.loc 1 281 0
+ 229 000a 1F4A     		ldr	r2, .L26
+ 230 000c 1268     		ldr	r2, [r2]
+ 231 000e 1F49     		ldr	r1, .L26+4
+ 232 0010 0968     		ldr	r1, [r1]
+ 233 0012 0190     		str	r0, [sp, #4]
+ 234 0014 0094     		str	r4, [sp]
+ 235 0016 1E48     		ldr	r0, .L26+8
+ 236 0018 FFF7FEFF 		bl	printf
+ARM GAS  /tmp/ccRCtQQE.s 			page 11
+
+
+ 237              	.LVL15:
+ 287:Ourtasks/canwinch_ldrproto.c **** 	{
+ 238              		.loc 1 287 0
+ 239 001c 1D4B     		ldr	r3, .L26+12
+ 240 001e B3F80C18 		ldrh	r1, [r3, #2060]
+ 241 0022 0329     		cmp	r1, #3
+ 242 0024 2AD8     		bhi	.L19
+ 243 0026 DFE801F0 		tbb	[pc, r1]
+ 244              	.L21:
+ 245 002a 02       		.byte	(.L20-.L21)/2
+ 246 002b 10       		.byte	(.L22-.L21)/2
+ 247 002c 06       		.byte	(.L23-.L21)/2
+ 248 002d 06       		.byte	(.L23-.L21)/2
+ 249              		.p2align 1
+ 250              	.L20:
+ 290:Ourtasks/canwinch_ldrproto.c **** 		break;	// No need to write the block
+ 251              		.loc 1 290 0
+ 252 002e 1A48     		ldr	r0, .L26+16
+ 253 0030 FFF7FEFF 		bl	printf
+ 254              	.LVL16:
+ 291:Ourtasks/canwinch_ldrproto.c **** 
+ 255              		.loc 1 291 0
+ 256 0034 25E0     		b	.L18
+ 257              	.L23:
+ 295:Ourtasks/canwinch_ldrproto.c **** 		can_msg_cmd.cd.uc[2] = flash_erase((uint16_t*)flblkbuff.base);
+ 258              		.loc 1 295 0
+ 259 0036 1948     		ldr	r0, .L26+20
+ 260 0038 FFF7FEFF 		bl	printf
+ 261              	.LVL17:
+ 296:Ourtasks/canwinch_ldrproto.c **** 
+ 262              		.loc 1 296 0
+ 263 003c 154B     		ldr	r3, .L26+12
+ 264 003e D3F80008 		ldr	r0, [r3, #2048]
+ 265 0042 FFF7FEFF 		bl	flash_erase
+ 266              	.LVL18:
+ 267 0046 164B     		ldr	r3, .L26+24
+ 268 0048 9872     		strb	r0, [r3, #10]
+ 269              	.L22:
+ 299:Ourtasks/canwinch_ldrproto.c **** printf("wrblk: CASE 1: writing block\n\r");
+ 270              		.loc 1 299 0
+ 271 004a 124B     		ldr	r3, .L26+12
+ 272 004c 154A     		ldr	r2, .L26+28
+ 273 004e 1268     		ldr	r2, [r2]
+ 274 0050 1946     		mov	r1, r3
+ 275 0052 D3F80008 		ldr	r0, [r3, #2048]
+ 276 0056 FFF7FEFF 		bl	flash_write
+ 277              	.LVL19:
+ 278 005a 114C     		ldr	r4, .L26+24
+ 279 005c 6072     		strb	r0, [r4, #9]
+ 300:Ourtasks/canwinch_ldrproto.c **** 
+ 280              		.loc 1 300 0
+ 281 005e 1248     		ldr	r0, .L26+32
+ 282 0060 FFF7FEFF 		bl	printf
+ 283              	.LVL20:
+ 302:Ourtasks/canwinch_ldrproto.c ****  printf("wrblk: pay[1] %X pay[2] %X\n\r",(unsigned int)can_msg_cmd.cd.uc[1], (unsigned int)can_msg_
+ 284              		.loc 1 302 0
+ 285 0064 A368     		ldr	r3, [r4, #8]
+ARM GAS  /tmp/ccRCtQQE.s 			page 12
+
+
+ 286 0066 23F07F43 		bic	r3, r3, #-16777216
+ 287 006a 23F0FF03 		bic	r3, r3, #255
+ 288 006e 43B1     		cbz	r3, .L18
+ 303:Ourtasks/canwinch_ldrproto.c **** 		break;	
+ 289              		.loc 1 303 0
+ 290 0070 A27A     		ldrb	r2, [r4, #10]	@ zero_extendqisi2
+ 291 0072 617A     		ldrb	r1, [r4, #9]	@ zero_extendqisi2
+ 292 0074 0D48     		ldr	r0, .L26+36
+ 293 0076 FFF7FEFF 		bl	printf
+ 294              	.LVL21:
+ 295 007a 02E0     		b	.L18
+ 296              	.L19:
+ 306:Ourtasks/canwinch_ldrproto.c **** 	}
+ 297              		.loc 1 306 0
+ 298 007c 0C48     		ldr	r0, .L26+40
+ 299 007e FFF7FEFF 		bl	printf
+ 300              	.LVL22:
+ 301              	.L18:
+ 309:Ourtasks/canwinch_ldrproto.c **** /* **************************************************************************************
+ 302              		.loc 1 309 0
+ 303 0082 02B0     		add	sp, sp, #8
+ 304              	.LCFI6:
+ 305              		.cfi_def_cfa_offset 8
+ 306              		@ sp needed
+ 307 0084 10BD     		pop	{r4, pc}
+ 308              	.L27:
+ 309 0086 00BF     		.align	2
+ 310              	.L26:
+ 311 0088 00000000 		.word	padd
+ 312 008c 00000000 		.word	.LANCHOR3
+ 313 0090 00000000 		.word	.LC0
+ 314 0094 00000000 		.word	.LANCHOR1
+ 315 0098 1C000000 		.word	.LC1
+ 316 009c 44000000 		.word	.LC2
+ 317 00a0 00000000 		.word	.LANCHOR2
+ 318 00a4 00000000 		.word	.LANCHOR0
+ 319 00a8 70000000 		.word	.LC3
+ 320 00ac 90000000 		.word	.LC4
+ 321 00b0 B0000000 		.word	.LC5
+ 322              		.cfi_endproc
+ 323              	.LFE143:
+ 325              		.section	.text.writepayloadf1,"ax",%progbits
+ 326              		.align	2
+ 327              		.thumb
+ 328              		.thumb_func
+ 330              	writepayloadf1:
+ 331              	.LFB145:
+ 333:Ourtasks/canwinch_ldrproto.c **** /* **************************************************************************************
+ 334:Ourtasks/canwinch_ldrproto.c ****  * static void writepayloadf1(uint8_t* pc, int8_t count,struct CANRCVBUF* p);
+ 335:Ourtasks/canwinch_ldrproto.c ****  * @brief	: Load payload into RAM buffer
+ 336:Ourtasks/canwinch_ldrproto.c ****  * @param	: pc = pointer to payload start byte
+ 337:Ourtasks/canwinch_ldrproto.c ****  * @param	: count = dlc after masking
+ 338:Ourtasks/canwinch_ldrproto.c ****  * @param	: p = CAN msg pointer (for printf & debugging)
+ 339:Ourtasks/canwinch_ldrproto.c ****  * ************************************************************************************** */
+ 340:Ourtasks/canwinch_ldrproto.c **** static void writepayloadf1(uint8_t* pc, int8_t count,struct CANRCVBUF* p)
+ 341:Ourtasks/canwinch_ldrproto.c **** {
+ 332              		.loc 1 341 0
+ARM GAS  /tmp/ccRCtQQE.s 			page 13
+
+
+ 333              		.cfi_startproc
+ 334              		@ args = 0, pretend = 0, frame = 0
+ 335              		@ frame_needed = 0, uses_anonymous_args = 0
+ 336              	.LVL23:
+ 337 0000 70B5     		push	{r4, r5, r6, lr}
+ 338              	.LCFI7:
+ 339              		.cfi_def_cfa_offset 16
+ 340              		.cfi_offset 4, -16
+ 341              		.cfi_offset 5, -12
+ 342              		.cfi_offset 6, -8
+ 343              		.cfi_offset 14, -4
+ 344 0002 0546     		mov	r5, r0
+ 345 0004 0C46     		mov	r4, r1
+ 346 0006 1646     		mov	r6, r2
+ 342:Ourtasks/canwinch_ldrproto.c **** 	while (count > 0)	// Loop through the payload
+ 347              		.loc 1 342 0
+ 348 0008 40E0     		b	.L29
+ 349              	.LVL24:
+ 350              	.L32:
+ 343:Ourtasks/canwinch_ldrproto.c **** 	{	
+ 344:Ourtasks/canwinch_ldrproto.c **** 		/* Is this address for a different block? */
+ 345:Ourtasks/canwinch_ldrproto.c **** 		if (((uint32_t)padd & ~(flashblocksize - 1)) != (uint32_t)flblkbuff.base)
+ 351              		.loc 1 345 0
+ 352 000a 224B     		ldr	r3, .L34
+ 353 000c 1B68     		ldr	r3, [r3]
+ 354 000e 5B42     		negs	r3, r3
+ 355 0010 214A     		ldr	r2, .L34+4
+ 356 0012 1268     		ldr	r2, [r2]
+ 357 0014 1340     		ands	r3, r3, r2
+ 358 0016 2149     		ldr	r1, .L34+8
+ 359 0018 D1F80018 		ldr	r1, [r1, #2048]
+ 360 001c 8B42     		cmp	r3, r1
+ 361 001e 07D0     		beq	.L30
+ 346:Ourtasks/canwinch_ldrproto.c **** 		{ // Here, the load address crossed a flash boundary
+ 347:Ourtasks/canwinch_ldrproto.c **** printf("padd crossed block boundary: %08X  padd: %08x\n\r",(unsigned int)flblkbuff.base, (unsigned 
+ 362              		.loc 1 347 0
+ 363 0020 1F48     		ldr	r0, .L34+12
+ 364 0022 FFF7FEFF 		bl	printf
+ 365              	.LVL25:
+ 348:Ourtasks/canwinch_ldrproto.c **** 			wrblk(p);		// Write RAM buff to flash
+ 366              		.loc 1 348 0
+ 367 0026 3046     		mov	r0, r6
+ 368 0028 FFF7FEFF 		bl	wrblk
+ 369              	.LVL26:
+ 349:Ourtasks/canwinch_ldrproto.c **** 			flashblockinit();	// Read in new flash block and init some pointers.
+ 370              		.loc 1 349 0
+ 371 002c FFF7FEFF 		bl	flashblockinit
+ 372              	.LVL27:
+ 373              	.L30:
+ 350:Ourtasks/canwinch_ldrproto.c **** 		}
+ 351:Ourtasks/canwinch_ldrproto.c **** 
+ 352:Ourtasks/canwinch_ldrproto.c **** 		/* Store one, measly, single, but valuable, byte */
+ 353:Ourtasks/canwinch_ldrproto.c **** 		if (*pc != *padd) // Is new byte different from byte in the flash location?
+ 374              		.loc 1 353 0
+ 375 0030 2978     		ldrb	r1, [r5]	@ zero_extendqisi2
+ 376 0032 194B     		ldr	r3, .L34+4
+ 377 0034 1A68     		ldr	r2, [r3]
+ARM GAS  /tmp/ccRCtQQE.s 			page 14
+
+
+ 378 0036 1378     		ldrb	r3, [r2]	@ zero_extendqisi2
+ 379 0038 9942     		cmp	r1, r3
+ 380 003a 18D0     		beq	.L31
+ 354:Ourtasks/canwinch_ldrproto.c **** 		{ // Here, yes.  Flag for writing and mabye even erasing
+ 355:Ourtasks/canwinch_ldrproto.c **** 			ldr_phase |= 0x1;	// Show we are going write flash so don't jump to the app unless commanded
+ 381              		.loc 1 355 0
+ 382 003c 1949     		ldr	r1, .L34+16
+ 383 003e 0B68     		ldr	r3, [r1]
+ 384 0040 43F00103 		orr	r3, r3, #1
+ 385 0044 0B60     		str	r3, [r1]
+ 356:Ourtasks/canwinch_ldrproto.c **** 			flblkbuff.sw |= 0x1;	// Show that we have to write (but may or may not need erase)
+ 386              		.loc 1 356 0
+ 387 0046 1549     		ldr	r1, .L34+8
+ 388 0048 B1F80C38 		ldrh	r3, [r1, #2060]
+ 389 004c 43F00103 		orr	r3, r3, #1
+ 390 0050 9BB2     		uxth	r3, r3
+ 391 0052 A1F80C38 		strh	r3, [r1, #2060]	@ movhi
+ 357:Ourtasks/canwinch_ldrproto.c **** 			if ( (*(uint16_t*)((uint32_t)padd & ~0x1)) != 0xffff)	// Is the 1/2 word already in an erased co
+ 392              		.loc 1 357 0
+ 393 0056 22F00102 		bic	r2, r2, #1
+ 394 005a 1188     		ldrh	r1, [r2]
+ 395 005c 4FF6FF72 		movw	r2, #65535
+ 396 0060 9142     		cmp	r1, r2
+ 397 0062 04D0     		beq	.L31
+ 358:Ourtasks/canwinch_ldrproto.c **** 				flblkbuff.sw |= 0x2;	// No, show that we have to erase before write
+ 398              		.loc 1 358 0
+ 399 0064 43F00203 		orr	r3, r3, #2
+ 400 0068 0C4A     		ldr	r2, .L34+8
+ 401 006a A2F80C38 		strh	r3, [r2, #2060]	@ movhi
+ 402              	.L31:
+ 359:Ourtasks/canwinch_ldrproto.c **** 		}
+ 360:Ourtasks/canwinch_ldrproto.c **** 		*flblkbuff.p++ = *pc++;	// Store this golden byte in the ram block buffer
+ 403              		.loc 1 360 0
+ 404 006e 0B4A     		ldr	r2, .L34+8
+ 405 0070 D2F80838 		ldr	r3, [r2, #2056]
+ 406 0074 591C     		adds	r1, r3, #1
+ 407 0076 C2F80818 		str	r1, [r2, #2056]
+ 408              	.LVL28:
+ 409 007a 2A78     		ldrb	r2, [r5]	@ zero_extendqisi2
+ 410 007c 1A70     		strb	r2, [r3]
+ 361:Ourtasks/canwinch_ldrproto.c **** 		padd++;			// Advance where the next byte would be placed in flash.
+ 411              		.loc 1 361 0
+ 412 007e 064A     		ldr	r2, .L34+4
+ 413 0080 1368     		ldr	r3, [r2]
+ 414 0082 0133     		adds	r3, r3, #1
+ 415 0084 1360     		str	r3, [r2]
+ 362:Ourtasks/canwinch_ldrproto.c **** 		count -= 1;		// CAN payload byte counter 
+ 416              		.loc 1 362 0
+ 417 0086 013C     		subs	r4, r4, #1
+ 418              	.LVL29:
+ 419 0088 64B2     		sxtb	r4, r4
+ 420              	.LVL30:
+ 360:Ourtasks/canwinch_ldrproto.c **** 		padd++;			// Advance where the next byte would be placed in flash.
+ 421              		.loc 1 360 0
+ 422 008a 0135     		adds	r5, r5, #1
+ 423              	.LVL31:
+ 424              	.L29:
+ARM GAS  /tmp/ccRCtQQE.s 			page 15
+
+
+ 342:Ourtasks/canwinch_ldrproto.c **** 	{	
+ 425              		.loc 1 342 0
+ 426 008c 002C     		cmp	r4, #0
+ 427 008e BCDC     		bgt	.L32
+ 363:Ourtasks/canwinch_ldrproto.c **** 	}
+ 364:Ourtasks/canwinch_ldrproto.c **** 	return;
+ 365:Ourtasks/canwinch_ldrproto.c **** }
+ 428              		.loc 1 365 0
+ 429 0090 70BD     		pop	{r4, r5, r6, pc}
+ 430              	.LVL32:
+ 431              	.L35:
+ 432 0092 00BF     		.align	2
+ 433              	.L34:
+ 434 0094 00000000 		.word	.LANCHOR0
+ 435 0098 00000000 		.word	padd
+ 436 009c 00000000 		.word	.LANCHOR1
+ 437 00a0 C8000000 		.word	.LC6
+ 438 00a4 00000000 		.word	.LANCHOR4
+ 439              		.cfi_endproc
+ 440              	.LFE145:
+ 442              		.section	.text.canwinch_ldrproto_init,"ax",%progbits
+ 443              		.align	2
+ 444              		.global	canwinch_ldrproto_init
+ 445              		.thumb
+ 446              		.thumb_func
+ 448              	canwinch_ldrproto_init:
+ 449              	.LFB136:
+ 131:Ourtasks/canwinch_ldrproto.c **** 	padd = (uint8_t*)(0x08000000);	// Set to something that doesn't give a bad address error
+ 450              		.loc 1 131 0
+ 451              		.cfi_startproc
+ 452              		@ args = 0, pretend = 0, frame = 0
+ 453              		@ frame_needed = 0, uses_anonymous_args = 0
+ 454              	.LVL33:
+ 455 0000 F8B5     		push	{r3, r4, r5, r6, r7, lr}
+ 456              	.LCFI8:
+ 457              		.cfi_def_cfa_offset 24
+ 458              		.cfi_offset 3, -24
+ 459              		.cfi_offset 4, -20
+ 460              		.cfi_offset 5, -16
+ 461              		.cfi_offset 6, -12
+ 462              		.cfi_offset 7, -8
+ 463              		.cfi_offset 14, -4
+ 464 0002 0446     		mov	r4, r0
+ 132:Ourtasks/canwinch_ldrproto.c **** 
+ 465              		.loc 1 132 0
+ 466 0004 4FF00062 		mov	r2, #134217728
+ 467 0008 154B     		ldr	r3, .L38
+ 468 000a 1A60     		str	r2, [r3]
+ 135:Ourtasks/canwinch_ldrproto.c **** 
+ 469              		.loc 1 135 0
+ 470 000c 154E     		ldr	r6, .L38+4
+ 471 000e 4FF40063 		mov	r3, #2048
+ 472 0012 3360     		str	r3, [r6]
+ 138:Ourtasks/canwinch_ldrproto.c **** 
+ 473              		.loc 1 138 0
+ 474 0014 144B     		ldr	r3, .L38+8
+ 475 0016 1B88     		ldrh	r3, [r3]
+ARM GAS  /tmp/ccRCtQQE.s 			page 16
+
+
+ 476 0018 9B02     		lsls	r3, r3, #10
+ 477 001a 1344     		add	r3, r3, r2
+ 478 001c 134D     		ldr	r5, .L38+12
+ 479 001e 2B60     		str	r3, [r5]
+ 140:Ourtasks/canwinch_ldrproto.c **** 
+ 480              		.loc 1 140 0
+ 481 0020 FFF7FEFF 		bl	flbblkbuff_init
+ 482              	.LVL34:
+ 142:Ourtasks/canwinch_ldrproto.c **** printf("FLASH HI ADDR: 0x%08X\n\r",(unsigned int)flash_hi);
+ 483              		.loc 1 142 0
+ 484 0024 3168     		ldr	r1, [r6]
+ 485 0026 1248     		ldr	r0, .L38+16
+ 486 0028 FFF7FEFF 		bl	printf
+ 487              	.LVL35:
+ 143:Ourtasks/canwinch_ldrproto.c **** 
+ 488              		.loc 1 143 0
+ 489 002c 2968     		ldr	r1, [r5]
+ 490 002e 1148     		ldr	r0, .L38+20
+ 491 0030 FFF7FEFF 		bl	printf
+ 492              	.LVL36:
+ 146:Ourtasks/canwinch_ldrproto.c **** 	can_msg_rd.id  = iamunitnumber; // Read
+ 493              		.loc 1 146 0
+ 494 0034 104F     		ldr	r7, .L38+24
+ 495 0036 3C60     		str	r4, [r7]
+ 147:Ourtasks/canwinch_ldrproto.c **** 	can_msg_wr.id  = iamunitnumber; // Write
+ 496              		.loc 1 147 0
+ 497 0038 104E     		ldr	r6, .L38+28
+ 498 003a 3460     		str	r4, [r6]
+ 148:Ourtasks/canwinch_ldrproto.c **** 
+ 499              		.loc 1 148 0
+ 500 003c 104D     		ldr	r5, .L38+32
+ 501 003e 2C60     		str	r4, [r5]
+ 150:Ourtasks/canwinch_ldrproto.c **** printf( "CMD: %08X\n\r",(unsigned int)can_msg_cmd.id);
+ 502              		.loc 1 150 0
+ 503 0040 1048     		ldr	r0, .L38+36
+ 504 0042 FFF7FEFF 		bl	printf
+ 505              	.LVL37:
+ 151:Ourtasks/canwinch_ldrproto.c **** printf( "RD : %08X\n\r",(unsigned int)can_msg_rd.id);
+ 506              		.loc 1 151 0
+ 507 0046 3968     		ldr	r1, [r7]
+ 508 0048 0F48     		ldr	r0, .L38+40
+ 509 004a FFF7FEFF 		bl	printf
+ 510              	.LVL38:
+ 152:Ourtasks/canwinch_ldrproto.c **** printf( "WR : %08X\n\r",(unsigned int)can_msg_wr.id);
+ 511              		.loc 1 152 0
+ 512 004e 3168     		ldr	r1, [r6]
+ 513 0050 0E48     		ldr	r0, .L38+44
+ 514 0052 FFF7FEFF 		bl	printf
+ 515              	.LVL39:
+ 153:Ourtasks/canwinch_ldrproto.c **** 
+ 516              		.loc 1 153 0
+ 517 0056 2968     		ldr	r1, [r5]
+ 518 0058 0D48     		ldr	r0, .L38+48
+ 519 005a FFF7FEFF 		bl	printf
+ 520              	.LVL40:
+ 521 005e F8BD     		pop	{r3, r4, r5, r6, r7, pc}
+ 522              	.LVL41:
+ARM GAS  /tmp/ccRCtQQE.s 			page 17
+
+
+ 523              	.L39:
+ 524              		.align	2
+ 525              	.L38:
+ 526 0060 00000000 		.word	padd
+ 527 0064 00000000 		.word	.LANCHOR0
+ 528 0068 E075FF1F 		.word	536835552
+ 529 006c 00000000 		.word	flash_hi
+ 530 0070 F8000000 		.word	.LC7
+ 531 0074 10010000 		.word	.LC8
+ 532 0078 00000000 		.word	.LANCHOR2
+ 533 007c 00000000 		.word	.LANCHOR5
+ 534 0080 00000000 		.word	.LANCHOR6
+ 535 0084 28010000 		.word	.LC9
+ 536 0088 34010000 		.word	.LC10
+ 537 008c 40010000 		.word	.LC11
+ 538 0090 4C010000 		.word	.LC12
+ 539              		.cfi_endproc
+ 540              	.LFE136:
+ 542              		.section	.text.mv2,"ax",%progbits
+ 543              		.align	2
+ 544              		.global	mv2
+ 545              		.thumb
+ 546              		.thumb_func
+ 548              	mv2:
+ 549              	.LFB137:
+ 164:Ourtasks/canwinch_ldrproto.c **** uint32_t mv4(uint8_t* p2){ return ( *(p2+3)<<24 | *(p2+2)<<16 | *(p2+1)<<8 | *p2 ); }
+ 550              		.loc 1 164 0
+ 551              		.cfi_startproc
+ 552              		@ args = 0, pretend = 0, frame = 0
+ 553              		@ frame_needed = 0, uses_anonymous_args = 0
+ 554              		@ link register save eliminated.
+ 555              	.LVL42:
+ 164:Ourtasks/canwinch_ldrproto.c **** uint32_t mv4(uint8_t* p2){ return ( *(p2+3)<<24 | *(p2+2)<<16 | *(p2+1)<<8 | *p2 ); }
+ 556              		.loc 1 164 0
+ 557 0000 4278     		ldrb	r2, [r0, #1]	@ zero_extendqisi2
+ 558 0002 0078     		ldrb	r0, [r0]	@ zero_extendqisi2
+ 559              	.LVL43:
+ 560 0004 40EA0220 		orr	r0, r0, r2, lsl #8
+ 561 0008 7047     		bx	lr
+ 562              		.cfi_endproc
+ 563              	.LFE137:
+ 565 000a 00BF     		.section	.text.mv4,"ax",%progbits
+ 566              		.align	2
+ 567              		.global	mv4
+ 568              		.thumb
+ 569              		.thumb_func
+ 571              	mv4:
+ 572              	.LFB138:
+ 165:Ourtasks/canwinch_ldrproto.c **** 
+ 573              		.loc 1 165 0
+ 574              		.cfi_startproc
+ 575              		@ args = 0, pretend = 0, frame = 0
+ 576              		@ frame_needed = 0, uses_anonymous_args = 0
+ 577              		@ link register save eliminated.
+ 578              	.LVL44:
+ 165:Ourtasks/canwinch_ldrproto.c **** 
+ 579              		.loc 1 165 0
+ARM GAS  /tmp/ccRCtQQE.s 			page 18
+
+
+ 580 0000 C278     		ldrb	r2, [r0, #3]	@ zero_extendqisi2
+ 581 0002 8378     		ldrb	r3, [r0, #2]	@ zero_extendqisi2
+ 582 0004 1B04     		lsls	r3, r3, #16
+ 583 0006 43EA0263 		orr	r3, r3, r2, lsl #24
+ 584 000a 4278     		ldrb	r2, [r0, #1]	@ zero_extendqisi2
+ 585 000c 43EA0223 		orr	r3, r3, r2, lsl #8
+ 586 0010 0078     		ldrb	r0, [r0]	@ zero_extendqisi2
+ 587              	.LVL45:
+ 588 0012 1843     		orrs	r0, r0, r3
+ 589 0014 7047     		bx	lr
+ 590              		.cfi_endproc
+ 591              	.LFE138:
+ 593 0016 00BF     		.section	.text.copypayload,"ax",%progbits
+ 594              		.align	2
+ 595              		.thumb
+ 596              		.thumb_func
+ 598              	copypayload:
+ 599              	.LFB141:
+ 224:Ourtasks/canwinch_ldrproto.c **** 	uint32_t x;
+ 600              		.loc 1 224 0
+ 601              		.cfi_startproc
+ 602              		@ args = 0, pretend = 0, frame = 0
+ 603              		@ frame_needed = 0, uses_anonymous_args = 0
+ 604              	.LVL46:
+ 226:Ourtasks/canwinch_ldrproto.c **** 	if (count > 8) count = 8;	// JIC	
+ 605              		.loc 1 226 0
+ 606 0000 0029     		cmp	r1, #0
+ 607              	.LVL47:
+ 608 0002 53DD     		ble	.L55
+ 224:Ourtasks/canwinch_ldrproto.c **** 	uint32_t x;
+ 609              		.loc 1 224 0
+ 610 0004 F8B5     		push	{r3, r4, r5, r6, r7, lr}
+ 611              	.LCFI9:
+ 612              		.cfi_def_cfa_offset 24
+ 613              		.cfi_offset 3, -24
+ 614              		.cfi_offset 4, -20
+ 615              		.cfi_offset 5, -16
+ 616              		.cfi_offset 6, -12
+ 617              		.cfi_offset 7, -8
+ 618              		.cfi_offset 14, -4
+ 619 0006 0546     		mov	r5, r0
+ 227:Ourtasks/canwinch_ldrproto.c **** 	count -= 1; // (count = 0 - 7)
+ 620              		.loc 1 227 0
+ 621 0008 0829     		cmp	r1, #8
+ 622 000a 00DD     		ble	.L44
+ 623 000c 0821     		movs	r1, #8
+ 624              	.L44:
+ 625              	.LVL48:
+ 228:Ourtasks/canwinch_ldrproto.c **** 
+ 626              		.loc 1 228 0
+ 627 000e 0139     		subs	r1, r1, #1
+ 628              	.LVL49:
+ 629 0010 49B2     		sxtb	r1, r1
+ 630              	.LVL50:
+ 230:Ourtasks/canwinch_ldrproto.c **** 	{
+ 631              		.loc 1 230 0
+ 632 0012 48E0     		b	.L45
+ARM GAS  /tmp/ccRCtQQE.s 			page 19
+
+
+ 633              	.LVL51:
+ 634              	.L52:
+ 232:Ourtasks/canwinch_ldrproto.c **** 		{ // Here, if either are odd, then we must move one byte at a time.
+ 635              		.loc 1 232 0
+ 636 0014 CCB2     		uxtb	r4, r1
+ 637 0016 14F0010F 		tst	r4, #1
+ 638 001a 04D0     		beq	.L46
+ 232:Ourtasks/canwinch_ldrproto.c **** 		{ // Here, if either are odd, then we must move one byte at a time.
+ 639              		.loc 1 232 0 is_stmt 0 discriminator 1
+ 640 001c 244B     		ldr	r3, .L56
+ 641 001e 1E68     		ldr	r6, [r3]
+ 642 0020 16F0010F 		tst	r6, #1
+ 643 0024 09D0     		beq	.L47
+ 644              	.L46:
+ 234:Ourtasks/canwinch_ldrproto.c **** 		}
+ 645              		.loc 1 234 0 is_stmt 1
+ 646 0026 224A     		ldr	r2, .L56
+ 647 0028 1368     		ldr	r3, [r2]
+ 648 002a 591C     		adds	r1, r3, #1
+ 649              	.LVL52:
+ 650 002c 1160     		str	r1, [r2]
+ 651              	.LVL53:
+ 652 002e 2A78     		ldrb	r2, [r5]	@ zero_extendqisi2
+ 653 0030 1A70     		strb	r2, [r3]
+ 654 0032 611E     		subs	r1, r4, #1
+ 655 0034 49B2     		sxtb	r1, r1
+ 656              	.LVL54:
+ 657 0036 0135     		adds	r5, r5, #1
+ 658              	.LVL55:
+ 659 0038 35E0     		b	.L45
+ 660              	.L47:
+ 238:Ourtasks/canwinch_ldrproto.c **** 			x &= 0x0f; 	// jic!
+ 661              		.loc 1 238 0
+ 662 003a 7300     		lsls	r3, r6, #1
+ 663 003c 03F00C02 		and	r2, r3, #12
+ 664 0040 C1F34103 		ubfx	r3, r1, #1, #2
+ 665              	.LVL56:
+ 239:Ourtasks/canwinch_ldrproto.c **** 			switch (table[x])
+ 666              		.loc 1 239 0
+ 667 0044 1343     		orrs	r3, r3, r2
+ 668              	.LVL57:
+ 240:Ourtasks/canwinch_ldrproto.c **** 			{
+ 669              		.loc 1 240 0
+ 670 0046 1B4A     		ldr	r2, .L56+4
+ 671 0048 D35C     		ldrb	r3, [r2, r3]	@ zero_extendqisi2
+ 672              	.LVL58:
+ 673 004a 042B     		cmp	r3, #4
+ 674 004c 0FD0     		beq	.L49
+ 675 004e 082B     		cmp	r3, #8
+ 676 0050 19D0     		beq	.L50
+ 677 0052 022B     		cmp	r3, #2
+ 678 0054 27D1     		bne	.L45
+ 243:Ourtasks/canwinch_ldrproto.c **** 				break;
+ 679              		.loc 1 243 0
+ 680 0056 2846     		mov	r0, r5
+ 681 0058 FFF7FEFF 		bl	mv2
+ 682              	.LVL59:
+ARM GAS  /tmp/ccRCtQQE.s 			page 20
+
+
+ 683 005c 3070     		strb	r0, [r6]
+ 684 005e 144A     		ldr	r2, .L56
+ 685 0060 1368     		ldr	r3, [r2]
+ 686 0062 0233     		adds	r3, r3, #2
+ 687 0064 1360     		str	r3, [r2]
+ 688 0066 0235     		adds	r5, r5, #2
+ 689              	.LVL60:
+ 690 0068 A11E     		subs	r1, r4, #2
+ 691 006a 49B2     		sxtb	r1, r1
+ 692              	.LVL61:
+ 244:Ourtasks/canwinch_ldrproto.c **** 
+ 693              		.loc 1 244 0
+ 694 006c 1BE0     		b	.L45
+ 695              	.LVL62:
+ 696              	.L49:
+ 247:Ourtasks/canwinch_ldrproto.c **** 				break;
+ 697              		.loc 1 247 0
+ 698 006e 2846     		mov	r0, r5
+ 699 0070 FFF7FEFF 		bl	mv4
+ 700              	.LVL63:
+ 701 0074 3060     		str	r0, [r6]
+ 702 0076 0E4A     		ldr	r2, .L56
+ 703 0078 1368     		ldr	r3, [r2]
+ 704 007a 0433     		adds	r3, r3, #4
+ 705 007c 1360     		str	r3, [r2]
+ 706 007e 0435     		adds	r5, r5, #4
+ 707              	.LVL64:
+ 708 0080 211F     		subs	r1, r4, #4
+ 709 0082 49B2     		sxtb	r1, r1
+ 710              	.LVL65:
+ 248:Ourtasks/canwinch_ldrproto.c **** 
+ 711              		.loc 1 248 0
+ 712 0084 0FE0     		b	.L45
+ 713              	.LVL66:
+ 714              	.L50:
+ 251:Ourtasks/canwinch_ldrproto.c **** 				*(uint32_t*)padd = mv4(pc); padd +=4; pc +=4;
+ 715              		.loc 1 251 0
+ 716 0086 2846     		mov	r0, r5
+ 717 0088 FFF7FEFF 		bl	mv4
+ 718              	.LVL67:
+ 719 008c 3060     		str	r0, [r6]
+ 720 008e 084E     		ldr	r6, .L56
+ 721 0090 3768     		ldr	r7, [r6]
+ 722 0092 3C1D     		adds	r4, r7, #4
+ 723              	.LVL68:
+ 724 0094 3460     		str	r4, [r6]
+ 725              	.LVL69:
+ 252:Ourtasks/canwinch_ldrproto.c **** 				return;
+ 726              		.loc 1 252 0
+ 727 0096 281D     		adds	r0, r5, #4
+ 728              	.LVL70:
+ 729 0098 FFF7FEFF 		bl	mv4
+ 730              	.LVL71:
+ 731 009c 7860     		str	r0, [r7, #4]
+ 732 009e 07F10804 		add	r4, r7, #8
+ 733 00a2 3460     		str	r4, [r6]
+ 734              	.LVL72:
+ARM GAS  /tmp/ccRCtQQE.s 			page 21
+
+
+ 253:Ourtasks/canwinch_ldrproto.c **** 			}
+ 735              		.loc 1 253 0
+ 736 00a4 F8BD     		pop	{r3, r4, r5, r6, r7, pc}
+ 737              	.LVL73:
+ 738              	.L45:
+ 230:Ourtasks/canwinch_ldrproto.c **** 	{
+ 739              		.loc 1 230 0
+ 740 00a6 0029     		cmp	r1, #0
+ 741 00a8 B4DC     		bgt	.L52
+ 742 00aa F8BD     		pop	{r3, r4, r5, r6, r7, pc}
+ 743              	.LVL74:
+ 744              	.L55:
+ 745              	.LCFI10:
+ 746              		.cfi_def_cfa_offset 0
+ 747              		.cfi_restore 3
+ 748              		.cfi_restore 4
+ 749              		.cfi_restore 5
+ 750              		.cfi_restore 6
+ 751              		.cfi_restore 7
+ 752              		.cfi_restore 14
+ 753 00ac 7047     		bx	lr
+ 754              	.L57:
+ 755 00ae 00BF     		.align	2
+ 756              	.L56:
+ 757 00b0 00000000 		.word	padd
+ 758 00b4 00000000 		.word	.LANCHOR7
+ 759              		.cfi_endproc
+ 760              	.LFE141:
+ 762              		.section	.text.do_jump,"ax",%progbits
+ 763              		.align	2
+ 764              		.thumb
+ 765              		.thumb_func
+ 767              	do_jump:
+ 768              	.LFB139:
+ 173:Ourtasks/canwinch_ldrproto.c **** 	uint32_t appjump;
+ 769              		.loc 1 173 0
+ 770              		.cfi_startproc
+ 771              		@ args = 0, pretend = 0, frame = 0
+ 772              		@ frame_needed = 0, uses_anonymous_args = 0
+ 773              	.LVL75:
+ 774 0000 08B5     		push	{r3, lr}
+ 775              	.LCFI11:
+ 776              		.cfi_def_cfa_offset 8
+ 777              		.cfi_offset 3, -8
+ 778              		.cfi_offset 14, -4
+ 177:Ourtasks/canwinch_ldrproto.c **** 
+ 779              		.loc 1 177 0
+ 780 0002 4368     		ldr	r3, [r0, #4]
+ 781 0004 042B     		cmp	r3, #4
+ 782 0006 06D1     		bne	.L60
+ 180:Ourtasks/canwinch_ldrproto.c **** 
+ 783              		.loc 1 180 0
+ 784 0008 0830     		adds	r0, r0, #8
+ 785              	.LVL76:
+ 786 000a FFF7FEFF 		bl	mv4
+ 787              	.LVL77:
+ 182:Ourtasks/canwinch_ldrproto.c **** 
+ARM GAS  /tmp/ccRCtQQE.s 			page 22
+
+
+ 788              		.loc 1 182 0
+ 789 000e 0368     		ldr	r3, [r0]
+ 790 0010 9847     		blx	r3
+ 791              	.LVL78:
+ 184:Ourtasks/canwinch_ldrproto.c **** }
+ 792              		.loc 1 184 0
+ 793 0012 0020     		movs	r0, #0
+ 794 0014 08BD     		pop	{r3, pc}
+ 795              	.LVL79:
+ 796              	.L60:
+ 177:Ourtasks/canwinch_ldrproto.c **** 
+ 797              		.loc 1 177 0
+ 798 0016 4FF0FF30 		mov	r0, #-1
+ 799              	.LVL80:
+ 185:Ourtasks/canwinch_ldrproto.c **** /* **************************************************************************************
+ 800              		.loc 1 185 0
+ 801 001a 08BD     		pop	{r3, pc}
+ 802              		.cfi_endproc
+ 803              	.LFE139:
+ 805              		.section	.text.do_dataread,"ax",%progbits
+ 806              		.align	2
+ 807              		.global	do_dataread
+ 808              		.thumb
+ 809              		.thumb_func
+ 811              	do_dataread:
+ 812              	.LFB140:
+ 192:Ourtasks/canwinch_ldrproto.c **** 	uint32_t i;
+ 813              		.loc 1 192 0
+ 814              		.cfi_startproc
+ 815              		@ args = 0, pretend = 0, frame = 0
+ 816              		@ frame_needed = 0, uses_anonymous_args = 0
+ 817              	.LVL81:
+ 818 0000 38B5     		push	{r3, r4, r5, lr}
+ 819              	.LCFI12:
+ 820              		.cfi_def_cfa_offset 16
+ 821              		.cfi_offset 3, -16
+ 822              		.cfi_offset 4, -12
+ 823              		.cfi_offset 5, -8
+ 824              		.cfi_offset 14, -4
+ 197:Ourtasks/canwinch_ldrproto.c **** 	
+ 825              		.loc 1 197 0
+ 826 0002 4568     		ldr	r5, [r0, #4]
+ 827 0004 05F00F05 		and	r5, r5, #15
+ 828              	.LVL82:
+ 199:Ourtasks/canwinch_ldrproto.c **** 	{ // In case we got a bogus byte count
+ 829              		.loc 1 199 0
+ 830 0008 082D     		cmp	r5, #8
+ 831 000a 00D9     		bls	.L63
+ 201:Ourtasks/canwinch_ldrproto.c **** 	}
+ 832              		.loc 1 201 0
+ 833 000c 0825     		movs	r5, #8
+ 834              	.LVL83:
+ 835              	.L63:
+ 203:Ourtasks/canwinch_ldrproto.c **** 	{
+ 836              		.loc 1 203 0
+ 837 000e 0023     		movs	r3, #0
+ 838 0010 07E0     		b	.L64
+ARM GAS  /tmp/ccRCtQQE.s 			page 23
+
+
+ 839              	.LVL84:
+ 840              	.L65:
+ 205:Ourtasks/canwinch_ldrproto.c **** 	}
+ 841              		.loc 1 205 0 discriminator 3
+ 842 0012 0649     		ldr	r1, .L68
+ 843 0014 0A68     		ldr	r2, [r1]
+ 844 0016 541C     		adds	r4, r2, #1
+ 845 0018 0C60     		str	r4, [r1]
+ 846 001a 1178     		ldrb	r1, [r2]	@ zero_extendqisi2
+ 847 001c C218     		adds	r2, r0, r3
+ 848 001e 1172     		strb	r1, [r2, #8]
+ 203:Ourtasks/canwinch_ldrproto.c **** 	{
+ 849              		.loc 1 203 0 discriminator 3
+ 850 0020 0133     		adds	r3, r3, #1
+ 851              	.LVL85:
+ 852              	.L64:
+ 203:Ourtasks/canwinch_ldrproto.c **** 	{
+ 853              		.loc 1 203 0 is_stmt 0 discriminator 1
+ 854 0022 AB42     		cmp	r3, r5
+ 855 0024 F5D3     		bcc	.L65
+ 207:Ourtasks/canwinch_ldrproto.c **** 	
+ 856              		.loc 1 207 0 is_stmt 1
+ 857 0026 FFF7FEFF 		bl	can_msg_put
+ 858              	.LVL86:
+ 859 002a 38BD     		pop	{r3, r4, r5, pc}
+ 860              	.LVL87:
+ 861              	.L69:
+ 862              		.align	2
+ 863              	.L68:
+ 864 002c 00000000 		.word	padd
+ 865              		.cfi_endproc
+ 866              	.LFE140:
+ 868              		.section	.text.addressOK,"ax",%progbits
+ 869              		.align	2
+ 870              		.global	addressOK
+ 871              		.thumb
+ 872              		.thumb_func
+ 874              	addressOK:
+ 875              	.LFB142:
+ 266:Ourtasks/canwinch_ldrproto.c **** 	uint32_t p;
+ 876              		.loc 1 266 0
+ 877              		.cfi_startproc
+ 878              		@ args = 0, pretend = 0, frame = 0
+ 879              		@ frame_needed = 0, uses_anonymous_args = 0
+ 880              		@ link register save eliminated.
+ 881              	.LVL88:
+ 268:Ourtasks/canwinch_ldrproto.c **** 	if (  (uint32_t)pa < 0x08000000) return -1;	// Return below any flash
+ 882              		.loc 1 268 0
+ 883 0000 0B4B     		ldr	r3, .L75
+ 884 0002 0344     		add	r3, r3, r0
+ 885 0004 41F60E02 		movw	r2, #6158
+ 886 0008 9342     		cmp	r3, r2
+ 887 000a 0AD9     		bls	.L72
+ 269:Ourtasks/canwinch_ldrproto.c **** 	p = *(uint32_t*)0x1FFFF7E0;			// Get size of flash in Kbytes
+ 888              		.loc 1 269 0
+ 889 000c B0F1006F 		cmp	r0, #134217728
+ 890 0010 09D3     		bcc	.L73
+ARM GAS  /tmp/ccRCtQQE.s 			page 24
+
+
+ 270:Ourtasks/canwinch_ldrproto.c **** 	p = (p << 10); 				// Multiply by 1024 (K)
+ 891              		.loc 1 270 0
+ 892 0012 084B     		ldr	r3, .L75+4
+ 893 0014 1B68     		ldr	r3, [r3]
+ 894              	.LVL89:
+ 272:Ourtasks/canwinch_ldrproto.c **** 	return 0;
+ 895              		.loc 1 272 0
+ 896 0016 B0EB832F 		cmp	r0, r3, lsl #10
+ 897 001a 07D9     		bls	.L74
+ 898 001c 4FF0FF30 		mov	r0, #-1
+ 899              	.LVL90:
+ 900 0020 7047     		bx	lr
+ 901              	.LVL91:
+ 902              	.L72:
+ 268:Ourtasks/canwinch_ldrproto.c **** 	if (  (uint32_t)pa < 0x08000000) return -1;	// Return below any flash
+ 903              		.loc 1 268 0
+ 904 0022 0020     		movs	r0, #0
+ 905              	.LVL92:
+ 906 0024 7047     		bx	lr
+ 907              	.LVL93:
+ 908              	.L73:
+ 269:Ourtasks/canwinch_ldrproto.c **** 	p = *(uint32_t*)0x1FFFF7E0;			// Get size of flash in Kbytes
+ 909              		.loc 1 269 0
+ 910 0026 4FF0FF30 		mov	r0, #-1
+ 911              	.LVL94:
+ 912 002a 7047     		bx	lr
+ 913              	.LVL95:
+ 914              	.L74:
+ 273:Ourtasks/canwinch_ldrproto.c **** }
+ 915              		.loc 1 273 0
+ 916 002c 0020     		movs	r0, #0
+ 917              	.LVL96:
+ 274:Ourtasks/canwinch_ldrproto.c **** /* **************************************************************************************
+ 918              		.loc 1 274 0
+ 919 002e 7047     		bx	lr
+ 920              	.L76:
+ 921              		.align	2
+ 922              	.L75:
+ 923 0030 FF1F00E0 		.word	-536862721
+ 924 0034 E0F7FF1F 		.word	536868832
+ 925              		.cfi_endproc
+ 926              	.LFE142:
+ 928              		.section	.text.do_datawrite,"ax",%progbits
+ 929              		.align	2
+ 930              		.global	do_datawrite
+ 931              		.thumb
+ 932              		.thumb_func
+ 934              	do_datawrite:
+ 935              	.LFB146:
+ 366:Ourtasks/canwinch_ldrproto.c **** 
+ 367:Ourtasks/canwinch_ldrproto.c **** /* **************************************************************************************
+ 368:Ourtasks/canwinch_ldrproto.c ****  * void do_datawrite(uint8_t* pc, int8_t count,struct CANRCVBUF* p);
+ 369:Ourtasks/canwinch_ldrproto.c ****  * @brief	: Move payload to flash RAM buffer, or RAM, or somewhere...
+ 370:Ourtasks/canwinch_ldrproto.c ****  * @param	: pc = pointer to payload start byte
+ 371:Ourtasks/canwinch_ldrproto.c ****  * @param	: count = dlc after masking
+ 372:Ourtasks/canwinch_ldrproto.c ****  * @param	: p = CAN msg pointer (for printf & debugging)
+ 373:Ourtasks/canwinch_ldrproto.c ****  * ************************************************************************************** */
+ARM GAS  /tmp/ccRCtQQE.s 			page 25
+
+
+ 374:Ourtasks/canwinch_ldrproto.c **** /* NOTE: The system block is in flash and is not in the flash address range, so copying it as a
+ 375:Ourtasks/canwinch_ldrproto.c **** memory address will not change it.  (You shouldn't be messing with it anyway!) */
+ 376:Ourtasks/canwinch_ldrproto.c **** void do_datawrite(uint8_t* pc, int8_t count,struct CANRCVBUF* p)
+ 377:Ourtasks/canwinch_ldrproto.c **** {
+ 936              		.loc 1 377 0
+ 937              		.cfi_startproc
+ 938              		@ args = 0, pretend = 0, frame = 0
+ 939              		@ frame_needed = 0, uses_anonymous_args = 0
+ 940              	.LVL97:
+ 941 0000 30B5     		push	{r4, r5, lr}
+ 942              	.LCFI13:
+ 943              		.cfi_def_cfa_offset 12
+ 944              		.cfi_offset 4, -12
+ 945              		.cfi_offset 5, -8
+ 946              		.cfi_offset 14, -4
+ 947 0002 85B0     		sub	sp, sp, #20
+ 948              	.LCFI14:
+ 949              		.cfi_def_cfa_offset 32
+ 950 0004 0C46     		mov	r4, r1
+ 951 0006 1546     		mov	r5, r2
+ 378:Ourtasks/canwinch_ldrproto.c **** 
+ 379:Ourtasks/canwinch_ldrproto.c **** 	if (count > 8) 			// Return if count out of range
+ 952              		.loc 1 379 0
+ 953 0008 0829     		cmp	r1, #8
+ 954 000a 11DD     		ble	.L78
+ 380:Ourtasks/canwinch_ldrproto.c **** 		{sendcanCMD(LDR_NACK);
+ 955              		.loc 1 380 0
+ 956 000c 0520     		movs	r0, #5
+ 957              	.LVL98:
+ 958 000e FFF7FEFF 		bl	sendcanCMD
+ 959              	.LVL99:
+ 381:Ourtasks/canwinch_ldrproto.c **** printf("NACK0: %d %X %d %X %08X %08X\n\r",(unsigned int)debugPctr, 
+ 382:Ourtasks/canwinch_ldrproto.c **** 	(unsigned int)padd, 
+ 383:Ourtasks/canwinch_ldrproto.c **** 	(unsigned int)count, 
+ 384:Ourtasks/canwinch_ldrproto.c **** 	(unsigned int)p->dlc, 
+ 960              		.loc 1 384 0
+ 961 0012 6B68     		ldr	r3, [r5, #4]
+ 385:Ourtasks/canwinch_ldrproto.c **** 	(unsigned int)p->cd.ui[0], 
+ 962              		.loc 1 385 0
+ 963 0014 A868     		ldr	r0, [r5, #8]
+ 386:Ourtasks/canwinch_ldrproto.c **** 	(unsigned int)p->cd.ui[1]);
+ 964              		.loc 1 386 0
+ 965 0016 ED68     		ldr	r5, [r5, #12]
+ 966              	.LVL100:
+ 381:Ourtasks/canwinch_ldrproto.c **** printf("NACK0: %d %X %d %X %08X %08X\n\r",(unsigned int)debugPctr, 
+ 967              		.loc 1 381 0
+ 968 0018 1D4A     		ldr	r2, .L84
+ 969 001a 1268     		ldr	r2, [r2]
+ 970 001c 1D49     		ldr	r1, .L84+4
+ 971 001e 0968     		ldr	r1, [r1]
+ 972 0020 0295     		str	r5, [sp, #8]
+ 973 0022 0190     		str	r0, [sp, #4]
+ 974 0024 0093     		str	r3, [sp]
+ 975 0026 2346     		mov	r3, r4
+ 976 0028 1B48     		ldr	r0, .L84+8
+ 977 002a FFF7FEFF 		bl	printf
+ 978              	.LVL101:
+ARM GAS  /tmp/ccRCtQQE.s 			page 26
+
+
+ 387:Ourtasks/canwinch_ldrproto.c **** return;}
+ 979              		.loc 1 387 0
+ 980 002e 2CE0     		b	.L77
+ 981              	.LVL102:
+ 982              	.L78:
+ 388:Ourtasks/canwinch_ldrproto.c **** 
+ 389:Ourtasks/canwinch_ldrproto.c **** 	// Return = No valid address in place
+ 390:Ourtasks/canwinch_ldrproto.c **** 	if (sw_padd == 0) { err_novalidadd += 1; sendcanCMD(LDR_NACK);
+ 983              		.loc 1 390 0
+ 984 0030 1A4B     		ldr	r3, .L84+12
+ 985 0032 1B68     		ldr	r3, [r3]
+ 986 0034 ABB9     		cbnz	r3, .L80
+ 987              		.loc 1 390 0 is_stmt 0 discriminator 1
+ 988 0036 1A4A     		ldr	r2, .L84+16
+ 989              	.LVL103:
+ 990 0038 1368     		ldr	r3, [r2]
+ 991 003a 0133     		adds	r3, r3, #1
+ 992 003c 1360     		str	r3, [r2]
+ 993 003e 0520     		movs	r0, #5
+ 994              	.LVL104:
+ 995 0040 FFF7FEFF 		bl	sendcanCMD
+ 996              	.LVL105:
+ 391:Ourtasks/canwinch_ldrproto.c **** printf("NAC1K: %d %X %d %X %08X %08X\n\r",
+ 392:Ourtasks/canwinch_ldrproto.c **** 	(unsigned int)(unsigned int)debugPctr, 
+ 393:Ourtasks/canwinch_ldrproto.c **** 	(unsigned int)padd, count, 
+ 394:Ourtasks/canwinch_ldrproto.c **** 	(unsigned int)p->dlc, 
+ 997              		.loc 1 394 0 is_stmt 1 discriminator 1
+ 998 0044 6B68     		ldr	r3, [r5, #4]
+ 395:Ourtasks/canwinch_ldrproto.c **** 	(unsigned int)p->cd.ui[0], 
+ 999              		.loc 1 395 0 discriminator 1
+ 1000 0046 A868     		ldr	r0, [r5, #8]
+ 396:Ourtasks/canwinch_ldrproto.c **** 	(unsigned int)p->cd.ui[1]);
+ 1001              		.loc 1 396 0 discriminator 1
+ 1002 0048 ED68     		ldr	r5, [r5, #12]
+ 1003              	.LVL106:
+ 391:Ourtasks/canwinch_ldrproto.c **** printf("NAC1K: %d %X %d %X %08X %08X\n\r",
+ 1004              		.loc 1 391 0 discriminator 1
+ 1005 004a 114A     		ldr	r2, .L84
+ 1006 004c 1268     		ldr	r2, [r2]
+ 1007 004e 1149     		ldr	r1, .L84+4
+ 1008 0050 0968     		ldr	r1, [r1]
+ 1009 0052 0295     		str	r5, [sp, #8]
+ 1010 0054 0190     		str	r0, [sp, #4]
+ 1011 0056 0093     		str	r3, [sp]
+ 1012 0058 2346     		mov	r3, r4
+ 1013 005a 1248     		ldr	r0, .L84+20
+ 1014 005c FFF7FEFF 		bl	printf
+ 1015              	.LVL107:
+ 397:Ourtasks/canwinch_ldrproto.c **** return;}	
+ 1016              		.loc 1 397 0 discriminator 1
+ 1017 0060 13E0     		b	.L77
+ 1018              	.LVL108:
+ 1019              	.L80:
+ 398:Ourtasks/canwinch_ldrproto.c **** 	
+ 399:Ourtasks/canwinch_ldrproto.c **** 	/* Is the address is within the flash bounds.  */
+ 400:Ourtasks/canwinch_ldrproto.c **** 	if ( ((uint32_t)padd >= 0x08000000) && ((uint32_t)padd < (uint32_t)flash_hi) ) 
+ 1020              		.loc 1 400 0
+ARM GAS  /tmp/ccRCtQQE.s 			page 27
+
+
+ 1021 0062 0B4B     		ldr	r3, .L84
+ 1022 0064 1B68     		ldr	r3, [r3]
+ 1023 0066 B3F1006F 		cmp	r3, #134217728
+ 1024 006a 07D3     		bcc	.L81
+ 1025              		.loc 1 400 0 is_stmt 0 discriminator 1
+ 1026 006c 0E4A     		ldr	r2, .L84+24
+ 1027              	.LVL109:
+ 1028 006e 1268     		ldr	r2, [r2]
+ 1029 0070 9342     		cmp	r3, r2
+ 1030 0072 03D2     		bcs	.L81
+ 401:Ourtasks/canwinch_ldrproto.c **** 	{ // Here, it is flash
+ 402:Ourtasks/canwinch_ldrproto.c **** 
+ 403:Ourtasks/canwinch_ldrproto.c **** 		writepayloadf1(pc, count,p);
+ 1031              		.loc 1 403 0 is_stmt 1
+ 1032 0074 2A46     		mov	r2, r5
+ 1033 0076 FFF7FEFF 		bl	writepayloadf1
+ 1034              	.LVL110:
+ 1035 007a 02E0     		b	.L82
+ 1036              	.LVL111:
+ 1037              	.L81:
+ 404:Ourtasks/canwinch_ldrproto.c **** 	}
+ 405:Ourtasks/canwinch_ldrproto.c **** 	else
+ 406:Ourtasks/canwinch_ldrproto.c **** 	{ // Here, not flash address.  Pray that it is a valid address
+ 407:Ourtasks/canwinch_ldrproto.c **** 		copypayload(pc, count);
+ 1038              		.loc 1 407 0
+ 1039 007c 2146     		mov	r1, r4
+ 1040              	.LVL112:
+ 1041 007e FFF7FEFF 		bl	copypayload
+ 1042              	.LVL113:
+ 1043              	.L82:
+ 408:Ourtasks/canwinch_ldrproto.c **** 	}
+ 409:Ourtasks/canwinch_ldrproto.c **** debugPctr += 1;
+ 1044              		.loc 1 409 0
+ 1045 0082 044A     		ldr	r2, .L84+4
+ 1046 0084 1368     		ldr	r3, [r2]
+ 1047 0086 0133     		adds	r3, r3, #1
+ 1048 0088 1360     		str	r3, [r2]
+ 1049              	.LVL114:
+ 1050              	.L77:
+ 410:Ourtasks/canwinch_ldrproto.c **** 	return;
+ 411:Ourtasks/canwinch_ldrproto.c **** }
+ 1051              		.loc 1 411 0
+ 1052 008a 05B0     		add	sp, sp, #20
+ 1053              	.LCFI15:
+ 1054              		.cfi_def_cfa_offset 12
+ 1055              		@ sp needed
+ 1056 008c 30BD     		pop	{r4, r5, pc}
+ 1057              	.L85:
+ 1058 008e 00BF     		.align	2
+ 1059              	.L84:
+ 1060 0090 00000000 		.word	padd
+ 1061 0094 00000000 		.word	.LANCHOR3
+ 1062 0098 58010000 		.word	.LC13
+ 1063 009c 00000000 		.word	.LANCHOR8
+ 1064 00a0 00000000 		.word	.LANCHOR9
+ 1065 00a4 78010000 		.word	.LC14
+ 1066 00a8 00000000 		.word	flash_hi
+ARM GAS  /tmp/ccRCtQQE.s 			page 28
+
+
+ 1067              		.cfi_endproc
+ 1068              	.LFE146:
+ 1070              		.section	.text.do_wrblk,"ax",%progbits
+ 1071              		.align	2
+ 1072              		.global	do_wrblk
+ 1073              		.thumb
+ 1074              		.thumb_func
+ 1076              	do_wrblk:
+ 1077              	.LFB147:
+ 412:Ourtasks/canwinch_ldrproto.c **** /* **************************************************************************************
+ 413:Ourtasks/canwinch_ldrproto.c ****  * void do_wrblk(struct CANRCVBUF* pcan);
+ 414:Ourtasks/canwinch_ldrproto.c ****  * @brief	: Write RAM buffer out to flash
+ 415:Ourtasks/canwinch_ldrproto.c ****  * ************************************************************************************** */
+ 416:Ourtasks/canwinch_ldrproto.c **** void do_wrblk(struct CANRCVBUF* pcan)
+ 417:Ourtasks/canwinch_ldrproto.c **** {
+ 1078              		.loc 1 417 0
+ 1079              		.cfi_startproc
+ 1080              		@ args = 0, pretend = 0, frame = 0
+ 1081              		@ frame_needed = 0, uses_anonymous_args = 0
+ 1082              	.LVL115:
+ 1083 0000 08B5     		push	{r3, lr}
+ 1084              	.LCFI16:
+ 1085              		.cfi_def_cfa_offset 8
+ 1086              		.cfi_offset 3, -8
+ 1087              		.cfi_offset 14, -4
+ 418:Ourtasks/canwinch_ldrproto.c **** 	wrblk(pcan);	// Write block to flash
+ 1088              		.loc 1 418 0
+ 1089 0002 FFF7FEFF 		bl	wrblk
+ 1090              	.LVL116:
+ 419:Ourtasks/canwinch_ldrproto.c **** 
+ 420:Ourtasks/canwinch_ldrproto.c **** 	/* Let PC know the flash write is complete. Send status in payload. */
+ 421:Ourtasks/canwinch_ldrproto.c **** 	can_msg_cmd.dlc = 3;
+ 1091              		.loc 1 421 0
+ 1092 0006 0448     		ldr	r0, .L88
+ 1093 0008 0323     		movs	r3, #3
+ 1094 000a 4360     		str	r3, [r0, #4]
+ 422:Ourtasks/canwinch_ldrproto.c **** 	can_msg_cmd.cd.uc[0] = LDR_WRBLK;
+ 1095              		.loc 1 422 0
+ 1096 000c 0723     		movs	r3, #7
+ 1097 000e 0372     		strb	r3, [r0, #8]
+ 423:Ourtasks/canwinch_ldrproto.c **** 	can_msg_put(&can_msg_cmd);		// Place in CAN output buffer
+ 1098              		.loc 1 423 0
+ 1099 0010 FFF7FEFF 		bl	can_msg_put
+ 1100              	.LVL117:
+ 1101 0014 08BD     		pop	{r3, pc}
+ 1102              	.L89:
+ 1103 0016 00BF     		.align	2
+ 1104              	.L88:
+ 1105 0018 00000000 		.word	.LANCHOR2
+ 1106              		.cfi_endproc
+ 1107              	.LFE147:
+ 1109              		.section	.text.do_crc,"ax",%progbits
+ 1110              		.align	2
+ 1111              		.global	do_crc
+ 1112              		.thumb
+ 1113              		.thumb_func
+ 1115              	do_crc:
+ARM GAS  /tmp/ccRCtQQE.s 			page 29
+
+
+ 1116              	.LFB148:
+ 424:Ourtasks/canwinch_ldrproto.c **** 
+ 425:Ourtasks/canwinch_ldrproto.c **** 	return;
+ 426:Ourtasks/canwinch_ldrproto.c **** }
+ 427:Ourtasks/canwinch_ldrproto.c **** /* **************************************************************************************
+ 428:Ourtasks/canwinch_ldrproto.c ****  * void do_crc(struct CANRCVBUF* p);
+ 429:Ourtasks/canwinch_ldrproto.c ****  * @brief	: Compute CRC and send it back
+ 430:Ourtasks/canwinch_ldrproto.c ****  * @param	: Point to message buffer holding the precious command
+ 431:Ourtasks/canwinch_ldrproto.c ****  * ************************************************************************************** */
+ 432:Ourtasks/canwinch_ldrproto.c **** void do_crc(struct CANRCVBUF* p)
+ 433:Ourtasks/canwinch_ldrproto.c **** {
+ 1117              		.loc 1 433 0
+ 1118              		.cfi_startproc
+ 1119              		@ args = 0, pretend = 0, frame = 0
+ 1120              		@ frame_needed = 0, uses_anonymous_args = 0
+ 1121              	.LVL118:
+ 1122 0000 70B5     		push	{r4, r5, r6, lr}
+ 1123              	.LCFI17:
+ 1124              		.cfi_def_cfa_offset 16
+ 1125              		.cfi_offset 4, -16
+ 1126              		.cfi_offset 5, -12
+ 1127              		.cfi_offset 6, -8
+ 1128              		.cfi_offset 14, -4
+ 1129 0002 82B0     		sub	sp, sp, #8
+ 1130              	.LCFI18:
+ 1131              		.cfi_def_cfa_offset 24
+ 434:Ourtasks/canwinch_ldrproto.c **** 	uint32_t pstart;
+ 435:Ourtasks/canwinch_ldrproto.c **** 	uint32_t count;
+ 436:Ourtasks/canwinch_ldrproto.c **** 	uint32_t crc32;
+ 437:Ourtasks/canwinch_ldrproto.c **** 
+ 438:Ourtasks/canwinch_ldrproto.c **** 	/* Check that the payload is the correct size: start|end addresses */
+ 439:Ourtasks/canwinch_ldrproto.c **** 	if ((p->dlc & 0x0f) != 8)
+ 1132              		.loc 1 439 0
+ 1133 0004 4168     		ldr	r1, [r0, #4]
+ 1134 0006 01F00F03 		and	r3, r1, #15
+ 1135 000a 082B     		cmp	r3, #8
+ 1136 000c 03D0     		beq	.L91
+ 440:Ourtasks/canwinch_ldrproto.c **** 	{ // Send NACK
+ 441:Ourtasks/canwinch_ldrproto.c **** printf("Send NACK: dlc not 8: %d\n\r",(unsigned int)p->dlc);
+ 1137              		.loc 1 441 0
+ 1138 000e 2048     		ldr	r0, .L98
+ 1139              	.LVL119:
+ 1140 0010 FFF7FEFF 		bl	printf
+ 1141              	.LVL120:
+ 442:Ourtasks/canwinch_ldrproto.c **** 		 return;
+ 1142              		.loc 1 442 0
+ 1143 0014 3AE0     		b	.L90
+ 1144              	.LVL121:
+ 1145              	.L91:
+ 1146 0016 0446     		mov	r4, r0
+ 443:Ourtasks/canwinch_ldrproto.c **** 	}
+ 444:Ourtasks/canwinch_ldrproto.c **** 	/* Get start and end addresses from payload */
+ 445:Ourtasks/canwinch_ldrproto.c **** 	count  = (p->cd.ui[0] >> 8);		// Number of bytes to check
+ 1147              		.loc 1 445 0
+ 1148 0018 8568     		ldr	r5, [r0, #8]
+ 1149              	.LVL122:
+ 446:Ourtasks/canwinch_ldrproto.c **** 	count  &= 0x000fffff; 	// Limit the size
+ARM GAS  /tmp/ccRCtQQE.s 			page 30
+
+
+ 1150              		.loc 1 446 0
+ 1151 001a C5F31325 		ubfx	r5, r5, #8, #20
+ 1152              	.LVL123:
+ 447:Ourtasks/canwinch_ldrproto.c **** 	pstart = p->cd.ui[1];	// Address to start
+ 1153              		.loc 1 447 0
+ 1154 001e C668     		ldr	r6, [r0, #12]
+ 1155              	.LVL124:
+ 448:Ourtasks/canwinch_ldrproto.c **** 
+ 449:Ourtasks/canwinch_ldrproto.c **** 	
+ 450:Ourtasks/canwinch_ldrproto.c **** 	/* Check that we are dealing with valid start address and count */
+ 451:Ourtasks/canwinch_ldrproto.c **** 	extern uint8_t* __appoffset;	// Origin of application define in .ld file
+ 452:Ourtasks/canwinch_ldrproto.c **** 	if ((pstart < (uint32_t)(&__appoffset)) || ((uint32_t)(&__appoffset + count) > (uint32_t)flash_hi)
+ 1156              		.loc 1 452 0
+ 1157 0020 1C4B     		ldr	r3, .L98+4
+ 1158 0022 9E42     		cmp	r6, r3
+ 1159 0024 05D3     		bcc	.L93
+ 1160              		.loc 1 452 0 is_stmt 0 discriminator 1
+ 1161 0026 03EB8503 		add	r3, r3, r5, lsl #2
+ 1162 002a 1B4A     		ldr	r2, .L98+8
+ 1163 002c 1268     		ldr	r2, [r2]
+ 1164 002e 9342     		cmp	r3, r2
+ 1165 0030 0BD9     		bls	.L94
+ 1166              	.L93:
+ 453:Ourtasks/canwinch_ldrproto.c **** 	{ // Send NACK
+ 454:Ourtasks/canwinch_ldrproto.c **** printf("Send NACK start addr out of range: %08X %X %08X %08X\n\r",
+ 1167              		.loc 1 454 0 is_stmt 1
+ 1168 0032 194B     		ldr	r3, .L98+8
+ 1169 0034 1B68     		ldr	r3, [r3]
+ 1170 0036 0093     		str	r3, [sp]
+ 1171 0038 164B     		ldr	r3, .L98+4
+ 1172 003a 03EB8503 		add	r3, r3, r5, lsl #2
+ 1173 003e 2A46     		mov	r2, r5
+ 1174 0040 3146     		mov	r1, r6
+ 1175 0042 1648     		ldr	r0, .L98+12
+ 1176              	.LVL125:
+ 1177 0044 FFF7FEFF 		bl	printf
+ 1178              	.LVL126:
+ 455:Ourtasks/canwinch_ldrproto.c **** 	(unsigned int)pstart, 
+ 456:Ourtasks/canwinch_ldrproto.c **** 	(unsigned int)count,
+ 457:Ourtasks/canwinch_ldrproto.c **** 	(unsigned int)(&__appoffset + count), 
+ 458:Ourtasks/canwinch_ldrproto.c **** 	(unsigned int)flash_hi);
+ 459:Ourtasks/canwinch_ldrproto.c **** 		return;
+ 1179              		.loc 1 459 0
+ 1180 0048 20E0     		b	.L90
+ 1181              	.LVL127:
+ 1182              	.L94:
+ 460:Ourtasks/canwinch_ldrproto.c **** 	}
+ 461:Ourtasks/canwinch_ldrproto.c **** 
+ 462:Ourtasks/canwinch_ldrproto.c **** if ( (pstart < (uint32_t)0x08004000) ||  ( (pstart + count) > (uint32_t)0x08100000) )
+ 1183              		.loc 1 462 0
+ 1184 004a 154B     		ldr	r3, .L98+16
+ 1185 004c 9E42     		cmp	r6, r3
+ 1186 004e 03D9     		bls	.L95
+ 1187              		.loc 1 462 0 is_stmt 0 discriminator 1
+ 1188 0050 AA19     		adds	r2, r5, r6
+ 1189 0052 B2F1016F 		cmp	r2, #135266304
+ 1190 0056 03D9     		bls	.L96
+ARM GAS  /tmp/ccRCtQQE.s 			page 31
+
+
+ 1191              	.L95:
+ 463:Ourtasks/canwinch_ldrproto.c ****    {printf("Hard Coded address check out-of-range:"); return;}
+ 1192              		.loc 1 463 0 is_stmt 1
+ 1193 0058 1248     		ldr	r0, .L98+20
+ 1194              	.LVL128:
+ 1195 005a FFF7FEFF 		bl	printf
+ 1196              	.LVL129:
+ 1197 005e 15E0     		b	.L90
+ 1198              	.LVL130:
+ 1199              	.L96:
+ 464:Ourtasks/canwinch_ldrproto.c **** 
+ 465:Ourtasks/canwinch_ldrproto.c **** printf("rc_crc32: %08X %08X %08X\n\r",(unsigned int)pstart, (unsigned int)(pstart+count), (unsigned
+ 1200              		.loc 1 465 0
+ 1201 0060 2B46     		mov	r3, r5
+ 1202 0062 3146     		mov	r1, r6
+ 1203 0064 1048     		ldr	r0, .L98+24
+ 1204              	.LVL131:
+ 1205 0066 FFF7FEFF 		bl	printf
+ 1206              	.LVL132:
+ 466:Ourtasks/canwinch_ldrproto.c **** 	/* Compute the crc and place in msg to be returned. */
+ 467:Ourtasks/canwinch_ldrproto.c **** 	crc32 = rc_crc32((unsigned char*)pstart, count );
+ 1207              		.loc 1 467 0
+ 1208 006a 2946     		mov	r1, r5
+ 1209 006c 3046     		mov	r0, r6
+ 1210 006e FFF7FEFF 		bl	rc_crc32
+ 1211              	.LVL133:
+ 1212 0072 0546     		mov	r5, r0
+ 1213              	.LVL134:
+ 468:Ourtasks/canwinch_ldrproto.c **** printf("Send crc-32: %08X\n\r",(unsigned int)crc32);
+ 1214              		.loc 1 468 0
+ 1215 0074 0146     		mov	r1, r0
+ 1216 0076 0D48     		ldr	r0, .L98+28
+ 1217              	.LVL135:
+ 1218 0078 FFF7FEFF 		bl	printf
+ 1219              	.LVL136:
+ 469:Ourtasks/canwinch_ldrproto.c **** 
+ 470:Ourtasks/canwinch_ldrproto.c **** 	// Return msg with crc
+ 471:Ourtasks/canwinch_ldrproto.c **** 	p->dlc = 8;
+ 1220              		.loc 1 471 0
+ 1221 007c 0823     		movs	r3, #8
+ 1222 007e 6360     		str	r3, [r4, #4]
+ 472:Ourtasks/canwinch_ldrproto.c **** 	p->cd.ui[1] = crc32;
+ 1223              		.loc 1 472 0
+ 1224 0080 E560     		str	r5, [r4, #12]
+ 473:Ourtasks/canwinch_ldrproto.c **** 	p->cd.uc[0] = LDR_CRC;
+ 1225              		.loc 1 473 0
+ 1226 0082 0323     		movs	r3, #3
+ 1227 0084 2372     		strb	r3, [r4, #8]
+ 474:Ourtasks/canwinch_ldrproto.c **** 	can_msg_put(p);		// Place in CAN output buffer
+ 1228              		.loc 1 474 0
+ 1229 0086 2046     		mov	r0, r4
+ 1230 0088 FFF7FEFF 		bl	can_msg_put
+ 1231              	.LVL137:
+ 1232              	.L90:
+ 475:Ourtasks/canwinch_ldrproto.c **** 
+ 476:Ourtasks/canwinch_ldrproto.c **** 	return;
+ 477:Ourtasks/canwinch_ldrproto.c **** }
+ARM GAS  /tmp/ccRCtQQE.s 			page 32
+
+
+ 1233              		.loc 1 477 0
+ 1234 008c 02B0     		add	sp, sp, #8
+ 1235              	.LCFI19:
+ 1236              		.cfi_def_cfa_offset 16
+ 1237              		@ sp needed
+ 1238 008e 70BD     		pop	{r4, r5, r6, pc}
+ 1239              	.L99:
+ 1240              		.align	2
+ 1241              	.L98:
+ 1242 0090 98010000 		.word	.LC15
+ 1243 0094 00000000 		.word	__appoffset
+ 1244 0098 00000000 		.word	flash_hi
+ 1245 009c B4010000 		.word	.LC16
+ 1246 00a0 FF3F0008 		.word	134234111
+ 1247 00a4 EC010000 		.word	.LC17
+ 1248 00a8 14020000 		.word	.LC18
+ 1249 00ac 30020000 		.word	.LC19
+ 1250              		.cfi_endproc
+ 1251              	.LFE148:
+ 1253              		.section	.text.do_set_addr,"ax",%progbits
+ 1254              		.align	2
+ 1255              		.global	do_set_addr
+ 1256              		.thumb
+ 1257              		.thumb_func
+ 1259              	do_set_addr:
+ 1260              	.LFB149:
+ 478:Ourtasks/canwinch_ldrproto.c **** /* **************************************************************************************
+ 479:Ourtasks/canwinch_ldrproto.c ****  * void do_set_addr(struct CANRCVBUF* p);
+ 480:Ourtasks/canwinch_ldrproto.c ****  * @brief	: Check payload and send response as two bytes (command + ACK/NACK)
+ 481:Ourtasks/canwinch_ldrproto.c ****  * @param	: Point to message buffer holding the precious command
+ 482:Ourtasks/canwinch_ldrproto.c ****  * ************************************************************************************** */
+ 483:Ourtasks/canwinch_ldrproto.c **** void do_set_addr(struct CANRCVBUF* p)
+ 484:Ourtasks/canwinch_ldrproto.c **** {
+ 1261              		.loc 1 484 0
+ 1262              		.cfi_startproc
+ 1263              		@ args = 0, pretend = 0, frame = 0
+ 1264              		@ frame_needed = 0, uses_anonymous_args = 0
+ 1265              	.LVL138:
+ 1266 0000 70B5     		push	{r4, r5, r6, lr}
+ 1267              	.LCFI20:
+ 1268              		.cfi_def_cfa_offset 16
+ 1269              		.cfi_offset 4, -16
+ 1270              		.cfi_offset 5, -12
+ 1271              		.cfi_offset 6, -8
+ 1272              		.cfi_offset 14, -4
+ 1273 0002 0446     		mov	r4, r0
+ 485:Ourtasks/canwinch_ldrproto.c **** 	uint8_t* ptmp;
+ 486:Ourtasks/canwinch_ldrproto.c **** 
+ 487:Ourtasks/canwinch_ldrproto.c **** 	if ((p->dlc & 0x0f) == 5) // Payload size: cmd byte + 4 byte address
+ 1274              		.loc 1 487 0
+ 1275 0004 4368     		ldr	r3, [r0, #4]
+ 1276 0006 03F00F03 		and	r3, r3, #15
+ 1277 000a 052B     		cmp	r3, #5
+ 1278 000c 1ED1     		bne	.L101
+ 488:Ourtasks/canwinch_ldrproto.c **** 	{ // 
+ 489:Ourtasks/canwinch_ldrproto.c **** ldr_phase |= 0x1; // Stop ldr.c from jumping to the app.
+ 1279              		.loc 1 489 0
+ARM GAS  /tmp/ccRCtQQE.s 			page 33
+
+
+ 1280 000e 154A     		ldr	r2, .L105
+ 1281 0010 1368     		ldr	r3, [r2]
+ 1282 0012 43F00103 		orr	r3, r3, #1
+ 1283 0016 1360     		str	r3, [r2]
+ 490:Ourtasks/canwinch_ldrproto.c **** 		ptmp = (uint8_t*)mv4(&p->cd.uc[1]);	// Extract address from payload
+ 1284              		.loc 1 490 0
+ 1285 0018 0930     		adds	r0, r0, #9
+ 1286              	.LVL139:
+ 1287 001a FFF7FEFF 		bl	mv4
+ 1288              	.LVL140:
+ 1289 001e 0546     		mov	r5, r0
+ 1290              	.LVL141:
+ 491:Ourtasks/canwinch_ldrproto.c **** 		if (addressOK(ptmp) == 0)	// Valid STM32 address?
+ 1291              		.loc 1 491 0
+ 1292 0020 FFF7FEFF 		bl	addressOK
+ 1293              	.LVL142:
+ 1294 0024 78B9     		cbnz	r0, .L102
+ 492:Ourtasks/canwinch_ldrproto.c **** 		{ // Here, yes.  It shouldn't cause a memory fault
+ 493:Ourtasks/canwinch_ldrproto.c **** 			p->cd.uc[1] = LDR_ACK;	// Show it passed all checks
+ 1295              		.loc 1 493 0
+ 1296 0026 0426     		movs	r6, #4
+ 1297 0028 6672     		strb	r6, [r4, #9]
+ 494:Ourtasks/canwinch_ldrproto.c **** 			padd = ptmp;		// Save working pointer
+ 1298              		.loc 1 494 0
+ 1299 002a 0F4B     		ldr	r3, .L105+4
+ 1300 002c 1D60     		str	r5, [r3]
+ 495:Ourtasks/canwinch_ldrproto.c **** 			padd_start = padd;	// Save start
+ 1301              		.loc 1 495 0
+ 1302 002e 0F4B     		ldr	r3, .L105+8
+ 1303 0030 1D60     		str	r5, [r3]
+ 496:Ourtasks/canwinch_ldrproto.c **** 			sw_padd = 1;		// Show it was "recently set"			
+ 1304              		.loc 1 496 0
+ 1305 0032 0122     		movs	r2, #1
+ 1306 0034 0E4B     		ldr	r3, .L105+12
+ 1307 0036 1A60     		str	r2, [r3]
+ 497:Ourtasks/canwinch_ldrproto.c **** 			flashblockinit();	//Load block that padd points to into RAM.
+ 1308              		.loc 1 497 0
+ 1309 0038 FFF7FEFF 		bl	flashblockinit
+ 1310              	.LVL143:
+ 498:Ourtasks/canwinch_ldrproto.c **** 			p->cd.uc[1] = LDR_ACK;
+ 1311              		.loc 1 498 0
+ 1312 003c 6672     		strb	r6, [r4, #9]
+ 499:Ourtasks/canwinch_ldrproto.c **** debugPctr = 0;
+ 1313              		.loc 1 499 0
+ 1314 003e 0022     		movs	r2, #0
+ 1315 0040 0C4B     		ldr	r3, .L105+16
+ 1316 0042 1A60     		str	r2, [r3]
+ 1317 0044 07E0     		b	.L103
+ 1318              	.L102:
+ 500:Ourtasks/canwinch_ldrproto.c **** 		}
+ 501:Ourtasks/canwinch_ldrproto.c **** 		else
+ 502:Ourtasks/canwinch_ldrproto.c **** 			p->cd.uc[1] = LDR_ADDR_OOB; // Failed the address check					
+ 1319              		.loc 1 502 0
+ 1320 0046 0C23     		movs	r3, #12
+ 1321 0048 6372     		strb	r3, [r4, #9]
+ 1322 004a 04E0     		b	.L103
+ 1323              	.LVL144:
+ARM GAS  /tmp/ccRCtQQE.s 			page 34
+
+
+ 1324              	.L101:
+ 503:Ourtasks/canwinch_ldrproto.c **** 	}
+ 504:Ourtasks/canwinch_ldrproto.c **** 	else
+ 505:Ourtasks/canwinch_ldrproto.c **** 	{ // Here, dlc size wrong
+ 506:Ourtasks/canwinch_ldrproto.c **** 		sw_padd = 0;	// Don't be storing stuff in bogus addresses
+ 1325              		.loc 1 506 0
+ 1326 004c 0022     		movs	r2, #0
+ 1327 004e 084B     		ldr	r3, .L105+12
+ 1328 0050 1A60     		str	r2, [r3]
+ 507:Ourtasks/canwinch_ldrproto.c **** 		p->cd.uc[1] = LDR_DLC_ERR;			
+ 1329              		.loc 1 507 0
+ 1330 0052 0D23     		movs	r3, #13
+ 1331 0054 4372     		strb	r3, [r0, #9]
+ 1332              	.LVL145:
+ 1333              	.L103:
+ 508:Ourtasks/canwinch_ldrproto.c **** 	}
+ 509:Ourtasks/canwinch_ldrproto.c **** 	/* Send response */
+ 510:Ourtasks/canwinch_ldrproto.c **** 	p->dlc = 2;
+ 1334              		.loc 1 510 0
+ 1335 0056 0223     		movs	r3, #2
+ 1336 0058 6360     		str	r3, [r4, #4]
+ 511:Ourtasks/canwinch_ldrproto.c **** 	can_msg_put(p);	// Place in CAN output buffer
+ 1337              		.loc 1 511 0
+ 1338 005a 2046     		mov	r0, r4
+ 1339 005c FFF7FEFF 		bl	can_msg_put
+ 1340              	.LVL146:
+ 1341 0060 70BD     		pop	{r4, r5, r6, pc}
+ 1342              	.LVL147:
+ 1343              	.L106:
+ 1344 0062 00BF     		.align	2
+ 1345              	.L105:
+ 1346 0064 00000000 		.word	.LANCHOR4
+ 1347 0068 00000000 		.word	padd
+ 1348 006c 00000000 		.word	padd_start
+ 1349 0070 00000000 		.word	.LANCHOR8
+ 1350 0074 00000000 		.word	.LANCHOR3
+ 1351              		.cfi_endproc
+ 1352              	.LFE149:
+ 1354              		.section	.text.do_flashsize,"ax",%progbits
+ 1355              		.align	2
+ 1356              		.global	do_flashsize
+ 1357              		.thumb
+ 1358              		.thumb_func
+ 1360              	do_flashsize:
+ 1361              	.LFB150:
+ 512:Ourtasks/canwinch_ldrproto.c **** 	return;
+ 513:Ourtasks/canwinch_ldrproto.c **** }
+ 514:Ourtasks/canwinch_ldrproto.c **** /* **************************************************************************************
+ 515:Ourtasks/canwinch_ldrproto.c ****  * void do_flashsize(struct CANRCVBUF* p);
+ 516:Ourtasks/canwinch_ldrproto.c ****  * @brief	: Send flashsize
+ 517:Ourtasks/canwinch_ldrproto.c ****  * @param	: Point to message buffer holding the imperial command
+ 518:Ourtasks/canwinch_ldrproto.c ****  * ************************************************************************************** */
+ 519:Ourtasks/canwinch_ldrproto.c **** void do_flashsize(struct CANRCVBUF* p)
+ 520:Ourtasks/canwinch_ldrproto.c **** {
+ 1362              		.loc 1 520 0
+ 1363              		.cfi_startproc
+ 1364              		@ args = 0, pretend = 0, frame = 0
+ARM GAS  /tmp/ccRCtQQE.s 			page 35
+
+
+ 1365              		@ frame_needed = 0, uses_anonymous_args = 0
+ 1366              	.LVL148:
+ 1367 0000 10B5     		push	{r4, lr}
+ 1368              	.LCFI21:
+ 1369              		.cfi_def_cfa_offset 8
+ 1370              		.cfi_offset 4, -8
+ 1371              		.cfi_offset 14, -4
+ 1372 0002 82B0     		sub	sp, sp, #8
+ 1373              	.LCFI22:
+ 1374              		.cfi_def_cfa_offset 16
+ 1375 0004 0446     		mov	r4, r0
+ 521:Ourtasks/canwinch_ldrproto.c **** 	p->dlc = 3;	// Command plus short
+ 1376              		.loc 1 521 0
+ 1377 0006 0323     		movs	r3, #3
+ 1378 0008 4360     		str	r3, [r0, #4]
+ 522:Ourtasks/canwinch_ldrproto.c **** 	p->cd.uc[1] = flashblocksize;	
+ 1379              		.loc 1 522 0
+ 1380 000a 084B     		ldr	r3, .L109
+ 1381 000c 1968     		ldr	r1, [r3]
+ 1382 000e CBB2     		uxtb	r3, r1
+ 1383 0010 4372     		strb	r3, [r0, #9]
+ 523:Ourtasks/canwinch_ldrproto.c **** 	p->cd.uc[2] = flashblocksize >> 8;
+ 1384              		.loc 1 523 0
+ 1385 0012 C1F30720 		ubfx	r0, r1, #8, #8
+ 1386              	.LVL149:
+ 1387 0016 A072     		strb	r0, [r4, #10]
+ 524:Ourtasks/canwinch_ldrproto.c **** printf("X: flashblocksize: %X %X %X %X\n\r",(unsigned int)flashblocksize, 
+ 525:Ourtasks/canwinch_ldrproto.c **** 	(unsigned int)p->cd.uc[0],(unsigned int)p->cd.uc[1],(unsigned int)p->cd.uc[2]);
+ 1388              		.loc 1 525 0
+ 1389 0018 227A     		ldrb	r2, [r4, #8]	@ zero_extendqisi2
+ 524:Ourtasks/canwinch_ldrproto.c **** printf("X: flashblocksize: %X %X %X %X\n\r",(unsigned int)flashblocksize, 
+ 1390              		.loc 1 524 0
+ 1391 001a 0090     		str	r0, [sp]
+ 1392 001c 0448     		ldr	r0, .L109+4
+ 1393 001e FFF7FEFF 		bl	printf
+ 1394              	.LVL150:
+ 526:Ourtasks/canwinch_ldrproto.c **** 	can_msg_put(p);	// Place in CAN output buffer
+ 1395              		.loc 1 526 0
+ 1396 0022 2046     		mov	r0, r4
+ 1397 0024 FFF7FEFF 		bl	can_msg_put
+ 1398              	.LVL151:
+ 527:Ourtasks/canwinch_ldrproto.c **** 	return;
+ 528:Ourtasks/canwinch_ldrproto.c **** }
+ 1399              		.loc 1 528 0
+ 1400 0028 02B0     		add	sp, sp, #8
+ 1401              	.LCFI23:
+ 1402              		.cfi_def_cfa_offset 8
+ 1403              		@ sp needed
+ 1404 002a 10BD     		pop	{r4, pc}
+ 1405              	.LVL152:
+ 1406              	.L110:
+ 1407              		.align	2
+ 1408              	.L109:
+ 1409 002c 00000000 		.word	.LANCHOR0
+ 1410 0030 44020000 		.word	.LC20
+ 1411              		.cfi_endproc
+ 1412              	.LFE150:
+ARM GAS  /tmp/ccRCtQQE.s 			page 36
+
+
+ 1414              		.section	.text.do_rd4,"ax",%progbits
+ 1415              		.align	2
+ 1416              		.global	do_rd4
+ 1417              		.thumb
+ 1418              		.thumb_func
+ 1420              	do_rd4:
+ 1421              	.LFB151:
+ 529:Ourtasks/canwinch_ldrproto.c **** /* **************************************************************************************
+ 530:Ourtasks/canwinch_ldrproto.c ****  * void do_rd4(struct CANRCVBUF* p);
+ 531:Ourtasks/canwinch_ldrproto.c ****  * @brief	: Send 4 bytes from starting address contained in payload
+ 532:Ourtasks/canwinch_ldrproto.c ****  * @param	: Point to message buffer holding the imperial command
+ 533:Ourtasks/canwinch_ldrproto.c ****  * ************************************************************************************** */
+ 534:Ourtasks/canwinch_ldrproto.c **** void do_rd4(struct CANRCVBUF* p)
+ 535:Ourtasks/canwinch_ldrproto.c **** {
+ 1422              		.loc 1 535 0
+ 1423              		.cfi_startproc
+ 1424              		@ args = 0, pretend = 0, frame = 0
+ 1425              		@ frame_needed = 0, uses_anonymous_args = 0
+ 1426              	.LVL153:
+ 1427 0000 70B5     		push	{r4, r5, r6, lr}
+ 1428              	.LCFI24:
+ 1429              		.cfi_def_cfa_offset 16
+ 1430              		.cfi_offset 4, -16
+ 1431              		.cfi_offset 5, -12
+ 1432              		.cfi_offset 6, -8
+ 1433              		.cfi_offset 14, -4
+ 1434 0002 84B0     		sub	sp, sp, #16
+ 1435              	.LCFI25:
+ 1436              		.cfi_def_cfa_offset 32
+ 1437 0004 0446     		mov	r4, r0
+ 536:Ourtasks/canwinch_ldrproto.c **** 	uint8_t* rdaddr = (uint8_t*)mv4(&p->cd.uc[1]); // Get bytes 1-4 into a word
+ 1438              		.loc 1 536 0
+ 1439 0006 0930     		adds	r0, r0, #9
+ 1440              	.LVL154:
+ 1441 0008 FFF7FEFF 		bl	mv4
+ 1442              	.LVL155:
+ 537:Ourtasks/canwinch_ldrproto.c **** 	p->dlc = 5;	// Command plus char*
+ 1443              		.loc 1 537 0
+ 1444 000c 0523     		movs	r3, #5
+ 1445 000e 6360     		str	r3, [r4, #4]
+ 1446              	.LVL156:
+ 538:Ourtasks/canwinch_ldrproto.c **** 	p->cd.uc[1] = *rdaddr++;
+ 1447              		.loc 1 538 0
+ 1448 0010 0378     		ldrb	r3, [r0]	@ zero_extendqisi2
+ 1449 0012 6372     		strb	r3, [r4, #9]
+ 1450              	.LVL157:
+ 539:Ourtasks/canwinch_ldrproto.c **** 	p->cd.uc[2] = *rdaddr++;
+ 1451              		.loc 1 539 0
+ 1452 0014 4178     		ldrb	r1, [r0, #1]	@ zero_extendqisi2
+ 1453 0016 A172     		strb	r1, [r4, #10]
+ 1454              	.LVL158:
+ 540:Ourtasks/canwinch_ldrproto.c **** 	p->cd.uc[3] = *rdaddr++;
+ 1455              		.loc 1 540 0
+ 1456 0018 8578     		ldrb	r5, [r0, #2]	@ zero_extendqisi2
+ 1457 001a E572     		strb	r5, [r4, #11]
+ 541:Ourtasks/canwinch_ldrproto.c **** 	p->cd.uc[4] = *rdaddr;
+ 1458              		.loc 1 541 0
+ARM GAS  /tmp/ccRCtQQE.s 			page 37
+
+
+ 1459 001c C678     		ldrb	r6, [r0, #3]	@ zero_extendqisi2
+ 1460 001e 2673     		strb	r6, [r4, #12]
+ 542:Ourtasks/canwinch_ldrproto.c **** printf("R4: read addr: %X %X %X %X %X %X\n\r",(unsigned int)rdaddr, (unsigned int)p->cd.uc[0],
+ 1461              		.loc 1 542 0
+ 1462 0020 227A     		ldrb	r2, [r4, #8]	@ zero_extendqisi2
+ 1463 0022 0296     		str	r6, [sp, #8]
+ 1464 0024 0195     		str	r5, [sp, #4]
+ 1465 0026 0091     		str	r1, [sp]
+ 1466 0028 C11C     		adds	r1, r0, #3
+ 1467              	.LVL159:
+ 1468 002a 0448     		ldr	r0, .L113
+ 1469 002c FFF7FEFF 		bl	printf
+ 1470              	.LVL160:
+ 543:Ourtasks/canwinch_ldrproto.c **** 	(unsigned int)p->cd.uc[1],
+ 544:Ourtasks/canwinch_ldrproto.c **** 	(unsigned int)p->cd.uc[2],
+ 545:Ourtasks/canwinch_ldrproto.c **** 	(unsigned int)p->cd.uc[3],
+ 546:Ourtasks/canwinch_ldrproto.c **** 	(unsigned int)p->cd.uc[4]);
+ 547:Ourtasks/canwinch_ldrproto.c **** 	can_msg_put(p);	// Place in CAN output buffer
+ 1471              		.loc 1 547 0
+ 1472 0030 2046     		mov	r0, r4
+ 1473 0032 FFF7FEFF 		bl	can_msg_put
+ 1474              	.LVL161:
+ 548:Ourtasks/canwinch_ldrproto.c **** 	return;
+ 549:Ourtasks/canwinch_ldrproto.c **** }
+ 1475              		.loc 1 549 0
+ 1476 0036 04B0     		add	sp, sp, #16
+ 1477              	.LCFI26:
+ 1478              		.cfi_def_cfa_offset 16
+ 1479              		@ sp needed
+ 1480 0038 70BD     		pop	{r4, r5, r6, pc}
+ 1481              	.LVL162:
+ 1482              	.L114:
+ 1483 003a 00BF     		.align	2
+ 1484              	.L113:
+ 1485 003c 68020000 		.word	.LC21
+ 1486              		.cfi_endproc
+ 1487              	.LFE151:
+ 1489              		.section	.text.do_getfromdaddress,"ax",%progbits
+ 1490              		.align	2
+ 1491              		.global	do_getfromdaddress
+ 1492              		.thumb
+ 1493              		.thumb_func
+ 1495              	do_getfromdaddress:
+ 1496              	.LFB152:
+ 550:Ourtasks/canwinch_ldrproto.c **** /* **************************************************************************************
+ 551:Ourtasks/canwinch_ldrproto.c ****  * void do_getfromdaddress(struct CANRCVBUF* p, uint8_t* rdaddr);
+ 552:Ourtasks/canwinch_ldrproto.c ****  * @brief	: Return msg with 4 bytes in payload uc[1-4] from address d
+ 553:Ourtasks/canwinch_ldrproto.c ****  * @param	: p = pointer to message buffer holding the imperial command
+ 554:Ourtasks/canwinch_ldrproto.c ****  * @param	: rdaddr = address to use 
+ 555:Ourtasks/canwinch_ldrproto.c ****  * ************************************************************************************** */
+ 556:Ourtasks/canwinch_ldrproto.c **** void do_getfromdaddress(struct CANRCVBUF* p, uint8_t* rdaddr)
+ 557:Ourtasks/canwinch_ldrproto.c **** {
+ 1497              		.loc 1 557 0
+ 1498              		.cfi_startproc
+ 1499              		@ args = 0, pretend = 0, frame = 0
+ 1500              		@ frame_needed = 0, uses_anonymous_args = 0
+ 1501              	.LVL163:
+ARM GAS  /tmp/ccRCtQQE.s 			page 38
+
+
+ 1502 0000 30B5     		push	{r4, r5, lr}
+ 1503              	.LCFI27:
+ 1504              		.cfi_def_cfa_offset 12
+ 1505              		.cfi_offset 4, -12
+ 1506              		.cfi_offset 5, -8
+ 1507              		.cfi_offset 14, -4
+ 1508 0002 83B0     		sub	sp, sp, #12
+ 1509              	.LCFI28:
+ 1510              		.cfi_def_cfa_offset 24
+ 1511 0004 0446     		mov	r4, r0
+ 1512 0006 0D46     		mov	r5, r1
+ 558:Ourtasks/canwinch_ldrproto.c **** 	if (addressOK(rdaddr) != 0)
+ 1513              		.loc 1 558 0
+ 1514 0008 0846     		mov	r0, r1
+ 1515              	.LVL164:
+ 1516 000a FFF7FEFF 		bl	addressOK
+ 1517              	.LVL165:
+ 1518 000e 20B1     		cbz	r0, .L116
+ 559:Ourtasks/canwinch_ldrproto.c **** 	{printf("do_getfromdaddress: addr not OK: %08X\n\r",(unsigned int)rdaddr); return;}
+ 1519              		.loc 1 559 0
+ 1520 0010 2946     		mov	r1, r5
+ 1521 0012 0C48     		ldr	r0, .L119
+ 1522 0014 FFF7FEFF 		bl	printf
+ 1523              	.LVL166:
+ 1524 0018 12E0     		b	.L115
+ 1525              	.L116:
+ 560:Ourtasks/canwinch_ldrproto.c **** 
+ 561:Ourtasks/canwinch_ldrproto.c **** 	p->dlc = 5;	// Command plus addr
+ 1526              		.loc 1 561 0
+ 1527 001a 0523     		movs	r3, #5
+ 1528 001c 6360     		str	r3, [r4, #4]
+ 1529              	.LVL167:
+ 562:Ourtasks/canwinch_ldrproto.c **** 	p->cd.uc[1] = *rdaddr++;
+ 1530              		.loc 1 562 0
+ 1531 001e 2A78     		ldrb	r2, [r5]	@ zero_extendqisi2
+ 1532 0020 6272     		strb	r2, [r4, #9]
+ 1533              	.LVL168:
+ 563:Ourtasks/canwinch_ldrproto.c **** 	p->cd.uc[2] = *rdaddr++;
+ 1534              		.loc 1 563 0
+ 1535 0022 6B78     		ldrb	r3, [r5, #1]	@ zero_extendqisi2
+ 1536 0024 A372     		strb	r3, [r4, #10]
+ 1537              	.LVL169:
+ 564:Ourtasks/canwinch_ldrproto.c **** 	p->cd.uc[3] = *rdaddr++;
+ 1538              		.loc 1 564 0
+ 1539 0026 A878     		ldrb	r0, [r5, #2]	@ zero_extendqisi2
+ 1540 0028 E072     		strb	r0, [r4, #11]
+ 565:Ourtasks/canwinch_ldrproto.c **** 	p->cd.uc[4] = *rdaddr;
+ 1541              		.loc 1 565 0
+ 1542 002a ED78     		ldrb	r5, [r5, #3]	@ zero_extendqisi2
+ 1543              	.LVL170:
+ 1544 002c 2573     		strb	r5, [r4, #12]
+ 566:Ourtasks/canwinch_ldrproto.c **** printf("GETADDR: read addr: %X %X %X %X %X\n\r", 
+ 567:Ourtasks/canwinch_ldrproto.c **** 	(unsigned int)p->cd.uc[0],
+ 1545              		.loc 1 567 0
+ 1546 002e 217A     		ldrb	r1, [r4, #8]	@ zero_extendqisi2
+ 566:Ourtasks/canwinch_ldrproto.c **** printf("GETADDR: read addr: %X %X %X %X %X\n\r", 
+ 1547              		.loc 1 566 0
+ARM GAS  /tmp/ccRCtQQE.s 			page 39
+
+
+ 1548 0030 0195     		str	r5, [sp, #4]
+ 1549 0032 0090     		str	r0, [sp]
+ 1550 0034 0448     		ldr	r0, .L119+4
+ 1551 0036 FFF7FEFF 		bl	printf
+ 1552              	.LVL171:
+ 568:Ourtasks/canwinch_ldrproto.c **** 	(unsigned int)p->cd.uc[1],
+ 569:Ourtasks/canwinch_ldrproto.c **** 	(unsigned int)p->cd.uc[2],
+ 570:Ourtasks/canwinch_ldrproto.c **** 	(unsigned int)p->cd.uc[3],
+ 571:Ourtasks/canwinch_ldrproto.c **** 	(unsigned int)p->cd.uc[4]);
+ 572:Ourtasks/canwinch_ldrproto.c **** 	can_msg_put(p);	// Place in CAN output buffer
+ 1553              		.loc 1 572 0
+ 1554 003a 2046     		mov	r0, r4
+ 1555 003c FFF7FEFF 		bl	can_msg_put
+ 1556              	.LVL172:
+ 1557              	.L115:
+ 573:Ourtasks/canwinch_ldrproto.c **** 	return;
+ 574:Ourtasks/canwinch_ldrproto.c **** }
+ 1558              		.loc 1 574 0
+ 1559 0040 03B0     		add	sp, sp, #12
+ 1560              	.LCFI29:
+ 1561              		.cfi_def_cfa_offset 12
+ 1562              		@ sp needed
+ 1563 0042 30BD     		pop	{r4, r5, pc}
+ 1564              	.LVL173:
+ 1565              	.L120:
+ 1566              		.align	2
+ 1567              	.L119:
+ 1568 0044 8C020000 		.word	.LC22
+ 1569 0048 B4020000 		.word	.LC23
+ 1570              		.cfi_endproc
+ 1571              	.LFE152:
+ 1573              		.section	.text.do_send4,"ax",%progbits
+ 1574              		.align	2
+ 1575              		.global	do_send4
+ 1576              		.thumb
+ 1577              		.thumb_func
+ 1579              	do_send4:
+ 1580              	.LFB153:
+ 575:Ourtasks/canwinch_ldrproto.c **** /* **************************************************************************************
+ 576:Ourtasks/canwinch_ldrproto.c ****  * void do_send4(struct CANRCVBUF* p, uint32_t n);
+ 577:Ourtasks/canwinch_ldrproto.c ****  * @brief	: Send 4 bytes
+ 578:Ourtasks/canwinch_ldrproto.c ****  * @param	: Point to message buffer holding the imperial command
+ 579:Ourtasks/canwinch_ldrproto.c ****  * @param	: n = 4 byte number
+ 580:Ourtasks/canwinch_ldrproto.c ****  * ************************************************************************************** */
+ 581:Ourtasks/canwinch_ldrproto.c **** void do_send4(struct CANRCVBUF* p, uint32_t n)
+ 582:Ourtasks/canwinch_ldrproto.c **** {
+ 1581              		.loc 1 582 0
+ 1582              		.cfi_startproc
+ 1583              		@ args = 0, pretend = 0, frame = 0
+ 1584              		@ frame_needed = 0, uses_anonymous_args = 0
+ 1585              	.LVL174:
+ 1586 0000 70B5     		push	{r4, r5, r6, lr}
+ 1587              	.LCFI30:
+ 1588              		.cfi_def_cfa_offset 16
+ 1589              		.cfi_offset 4, -16
+ 1590              		.cfi_offset 5, -12
+ 1591              		.cfi_offset 6, -8
+ARM GAS  /tmp/ccRCtQQE.s 			page 40
+
+
+ 1592              		.cfi_offset 14, -4
+ 1593 0002 84B0     		sub	sp, sp, #16
+ 1594              	.LCFI31:
+ 1595              		.cfi_def_cfa_offset 32
+ 1596 0004 0446     		mov	r4, r0
+ 583:Ourtasks/canwinch_ldrproto.c **** 	p->dlc = 5;	// Command plus char*
+ 1597              		.loc 1 583 0
+ 1598 0006 0523     		movs	r3, #5
+ 1599 0008 4360     		str	r3, [r0, #4]
+ 584:Ourtasks/canwinch_ldrproto.c **** 	p->cd.uc[1] = n;
+ 1600              		.loc 1 584 0
+ 1601 000a CBB2     		uxtb	r3, r1
+ 1602 000c 4372     		strb	r3, [r0, #9]
+ 585:Ourtasks/canwinch_ldrproto.c **** 	p->cd.uc[2] = n >> 8;
+ 1603              		.loc 1 585 0
+ 1604 000e C1F30725 		ubfx	r5, r1, #8, #8
+ 1605 0012 8572     		strb	r5, [r0, #10]
+ 586:Ourtasks/canwinch_ldrproto.c **** 	p->cd.uc[3] = n >> 16;
+ 1606              		.loc 1 586 0
+ 1607 0014 C1F30746 		ubfx	r6, r1, #16, #8
+ 1608 0018 C672     		strb	r6, [r0, #11]
+ 587:Ourtasks/canwinch_ldrproto.c **** 	p->cd.uc[4] = n >> 24;
+ 1609              		.loc 1 587 0
+ 1610 001a 080E     		lsrs	r0, r1, #24
+ 1611              	.LVL175:
+ 1612 001c 2073     		strb	r0, [r4, #12]
+ 588:Ourtasks/canwinch_ldrproto.c **** printf("send4: %X %X %X %X %X %X\n\r", (unsigned int)n, 
+ 589:Ourtasks/canwinch_ldrproto.c **** 	(unsigned int)p->cd.uc[0],
+ 1613              		.loc 1 589 0
+ 1614 001e 227A     		ldrb	r2, [r4, #8]	@ zero_extendqisi2
+ 588:Ourtasks/canwinch_ldrproto.c **** printf("send4: %X %X %X %X %X %X\n\r", (unsigned int)n, 
+ 1615              		.loc 1 588 0
+ 1616 0020 0290     		str	r0, [sp, #8]
+ 1617 0022 0196     		str	r6, [sp, #4]
+ 1618 0024 0095     		str	r5, [sp]
+ 1619 0026 0448     		ldr	r0, .L123
+ 1620 0028 FFF7FEFF 		bl	printf
+ 1621              	.LVL176:
+ 590:Ourtasks/canwinch_ldrproto.c **** 	(unsigned int)p->cd.uc[1],
+ 591:Ourtasks/canwinch_ldrproto.c **** 	(unsigned int)p->cd.uc[2],
+ 592:Ourtasks/canwinch_ldrproto.c **** 	(unsigned int)p->cd.uc[3],
+ 593:Ourtasks/canwinch_ldrproto.c **** 	(unsigned int)p->cd.uc[4]);
+ 594:Ourtasks/canwinch_ldrproto.c **** 
+ 595:Ourtasks/canwinch_ldrproto.c **** 	can_msg_put(p);	// Place in CAN output buffer
+ 1622              		.loc 1 595 0
+ 1623 002c 2046     		mov	r0, r4
+ 1624 002e FFF7FEFF 		bl	can_msg_put
+ 1625              	.LVL177:
+ 596:Ourtasks/canwinch_ldrproto.c **** 	return;
+ 597:Ourtasks/canwinch_ldrproto.c **** }
+ 1626              		.loc 1 597 0
+ 1627 0032 04B0     		add	sp, sp, #16
+ 1628              	.LCFI32:
+ 1629              		.cfi_def_cfa_offset 16
+ 1630              		@ sp needed
+ 1631 0034 70BD     		pop	{r4, r5, r6, pc}
+ 1632              	.LVL178:
+ARM GAS  /tmp/ccRCtQQE.s 			page 41
+
+
+ 1633              	.L124:
+ 1634 0036 00BF     		.align	2
+ 1635              	.L123:
+ 1636 0038 DC020000 		.word	.LC24
+ 1637              		.cfi_endproc
+ 1638              	.LFE153:
+ 1640              		.section	.text.do_getflashpaddr,"ax",%progbits
+ 1641              		.align	2
+ 1642              		.global	do_getflashpaddr
+ 1643              		.thumb
+ 1644              		.thumb_func
+ 1646              	do_getflashpaddr:
+ 1647              	.LFB154:
+ 598:Ourtasks/canwinch_ldrproto.c **** /* **************************************************************************************
+ 599:Ourtasks/canwinch_ldrproto.c ****  * void do_getflashpaddr(struct CANRCVBUF* p);
+ 600:Ourtasks/canwinch_ldrproto.c ****  * @brief	: Return msg number of crc blocks, and address to array of blocks
+ 601:Ourtasks/canwinch_ldrproto.c ****  * @param	: p = pointer to message buffer holding the imperial command
+ 602:Ourtasks/canwinch_ldrproto.c ****  * ************************************************************************************** */
+ 603:Ourtasks/canwinch_ldrproto.c **** extern uint8_t* __appoffset;
+ 604:Ourtasks/canwinch_ldrproto.c **** extern uint8_t* __highflashp;
+ 605:Ourtasks/canwinch_ldrproto.c **** extern uint8_t* __highflashlayout;
+ 606:Ourtasks/canwinch_ldrproto.c **** 
+ 607:Ourtasks/canwinch_ldrproto.c **** void do_getflashpaddr(struct CANRCVBUF* p)
+ 608:Ourtasks/canwinch_ldrproto.c **** {
+ 1648              		.loc 1 608 0
+ 1649              		.cfi_startproc
+ 1650              		@ args = 0, pretend = 0, frame = 0
+ 1651              		@ frame_needed = 0, uses_anonymous_args = 0
+ 1652              	.LVL179:
+ 1653 0000 38B5     		push	{r3, r4, r5, lr}
+ 1654              	.LCFI33:
+ 1655              		.cfi_def_cfa_offset 16
+ 1656              		.cfi_offset 3, -16
+ 1657              		.cfi_offset 4, -12
+ 1658              		.cfi_offset 5, -8
+ 1659              		.cfi_offset 14, -4
+ 1660 0002 0546     		mov	r5, r0
+ 609:Ourtasks/canwinch_ldrproto.c **** 	p->dlc = 8;	// Command plus addr
+ 1661              		.loc 1 609 0
+ 1662 0004 0823     		movs	r3, #8
+ 1663 0006 4360     		str	r3, [r0, #4]
+ 610:Ourtasks/canwinch_ldrproto.c **** 
+ 611:Ourtasks/canwinch_ldrproto.c **** 	extern void* __appjump;	// Defined in ldr.ld file
+ 612:Ourtasks/canwinch_ldrproto.c **** 	uint32_t* ppflashp = (uint32_t*)((uint32_t)((uint8_t*)*&__appjump + 7 + 0));	// Points to "size"
+ 1664              		.loc 1 612 0
+ 1665 0008 114B     		ldr	r3, .L131
+ 1666 000a 1A68     		ldr	r2, [r3]
+ 1667              	.LVL180:
+ 613:Ourtasks/canwinch_ldrproto.c **** 	
+ 614:Ourtasks/canwinch_ldrproto.c **** 	uint32_t size = *ppflashp;		// Get size
+ 1668              		.loc 1 614 0
+ 1669 000c D2F80730 		ldr	r3, [r2, #7]
+ 1670              	.LVL181:
+ 615:Ourtasks/canwinch_ldrproto.c **** 	uint32_t pflashp = *(ppflashp + 1);	// Get pointer to FLASHP and beginning of app struct
+ 1671              		.loc 1 615 0
+ 1672 0010 D2F80B20 		ldr	r2, [r2, #11]
+ 1673              	.LVL182:
+ARM GAS  /tmp/ccRCtQQE.s 			page 42
+
+
+ 616:Ourtasks/canwinch_ldrproto.c **** 
+ 617:Ourtasks/canwinch_ldrproto.c **** 	if (size > 0x000fffff) size = 0x000fffff; // Only 3 bytes allowed for size (and < 1 MB)
+ 1674              		.loc 1 617 0
+ 1675 0014 B3F5801F 		cmp	r3, #1048576
+ 1676 0018 00D3     		bcc	.L126
+ 1677 001a 0E4B     		ldr	r3, .L131+4
+ 1678              	.LVL183:
+ 1679              	.L126:
+ 618:Ourtasks/canwinch_ldrproto.c **** 
+ 619:Ourtasks/canwinch_ldrproto.c **** 	/* Payload [0] = cmd code; [1] - [3] = size; [4] - [7] = FLASHP address */
+ 620:Ourtasks/canwinch_ldrproto.c **** 	uint8_t tmp = p->cd.uc[0];
+ 1680              		.loc 1 620 0
+ 1681 001c 297A     		ldrb	r1, [r5, #8]	@ zero_extendqisi2
+ 1682              	.LVL184:
+ 621:Ourtasks/canwinch_ldrproto.c **** 	p->cd.ui[0] = (size << 8);	
+ 1683              		.loc 1 621 0
+ 1684 001e 1B02     		lsls	r3, r3, #8
+ 1685              	.LVL185:
+ 1686 0020 AB60     		str	r3, [r5, #8]
+ 622:Ourtasks/canwinch_ldrproto.c **** 	p->cd.uc[0] = tmp;
+ 1687              		.loc 1 622 0
+ 1688 0022 2972     		strb	r1, [r5, #8]
+ 623:Ourtasks/canwinch_ldrproto.c **** 	p->cd.ui[1] = pflashp;
+ 1689              		.loc 1 623 0
+ 1690 0024 EA60     		str	r2, [r5, #12]
+ 624:Ourtasks/canwinch_ldrproto.c **** 
+ 625:Ourtasks/canwinch_ldrproto.c **** int i;printf("GET FLASHP addr ");
+ 1691              		.loc 1 625 0
+ 1692 0026 0C48     		ldr	r0, .L131+8
+ 1693              	.LVL186:
+ 1694 0028 FFF7FEFF 		bl	printf
+ 1695              	.LVL187:
+ 626:Ourtasks/canwinch_ldrproto.c **** for (i = 0; i < 8; i++) printf(" %X",(unsigned int)p->cd.uc[i]); 
+ 1696              		.loc 1 626 0
+ 1697 002c 0024     		movs	r4, #0
+ 1698 002e 05E0     		b	.L127
+ 1699              	.LVL188:
+ 1700              	.L128:
+ 1701              		.loc 1 626 0 is_stmt 0 discriminator 3
+ 1702 0030 2B19     		adds	r3, r5, r4
+ 1703 0032 197A     		ldrb	r1, [r3, #8]	@ zero_extendqisi2
+ 1704 0034 0948     		ldr	r0, .L131+12
+ 1705 0036 FFF7FEFF 		bl	printf
+ 1706              	.LVL189:
+ 1707 003a 0134     		adds	r4, r4, #1
+ 1708              	.LVL190:
+ 1709              	.L127:
+ 1710              		.loc 1 626 0 discriminator 1
+ 1711 003c 072C     		cmp	r4, #7
+ 1712 003e F7DD     		ble	.L128
+ 627:Ourtasks/canwinch_ldrproto.c **** printf("\n\r"); 
+ 1713              		.loc 1 627 0 is_stmt 1
+ 1714 0040 0748     		ldr	r0, .L131+16
+ 1715 0042 FFF7FEFF 		bl	printf
+ 1716              	.LVL191:
+ 628:Ourtasks/canwinch_ldrproto.c **** 
+ 629:Ourtasks/canwinch_ldrproto.c **** 	can_msg_put(p);	// Place in CAN output buffer
+ARM GAS  /tmp/ccRCtQQE.s 			page 43
+
+
+ 1717              		.loc 1 629 0
+ 1718 0046 2846     		mov	r0, r5
+ 1719 0048 FFF7FEFF 		bl	can_msg_put
+ 1720              	.LVL192:
+ 1721 004c 38BD     		pop	{r3, r4, r5, pc}
+ 1722              	.LVL193:
+ 1723              	.L132:
+ 1724 004e 00BF     		.align	2
+ 1725              	.L131:
+ 1726 0050 00000000 		.word	__appjump
+ 1727 0054 FFFF0F00 		.word	1048575
+ 1728 0058 F8020000 		.word	.LC25
+ 1729 005c 0C030000 		.word	.LC26
+ 1730 0060 10030000 		.word	.LC27
+ 1731              		.cfi_endproc
+ 1732              	.LFE154:
+ 1734              		.section	.text.do_cmd_cmd,"ax",%progbits
+ 1735              		.align	2
+ 1736              		.global	do_cmd_cmd
+ 1737              		.thumb
+ 1738              		.thumb_func
+ 1740              	do_cmd_cmd:
+ 1741              	.LFB155:
+ 630:Ourtasks/canwinch_ldrproto.c **** 	return;
+ 631:Ourtasks/canwinch_ldrproto.c **** }
+ 632:Ourtasks/canwinch_ldrproto.c **** 
+ 633:Ourtasks/canwinch_ldrproto.c **** 
+ 634:Ourtasks/canwinch_ldrproto.c **** /* **************************************************************************************
+ 635:Ourtasks/canwinch_ldrproto.c ****  * void do_cmd_cmd(struct CANRCVBUF* p);
+ 636:Ourtasks/canwinch_ldrproto.c ****  * @brief	: Do something!
+ 637:Ourtasks/canwinch_ldrproto.c ****  * @param	: p = pointer to message buffer
+ 638:Ourtasks/canwinch_ldrproto.c ****  * ************************************************************************************** */
+ 639:Ourtasks/canwinch_ldrproto.c **** void do_cmd_cmd(struct CANRCVBUF* p)
+ 640:Ourtasks/canwinch_ldrproto.c **** {
+ 1742              		.loc 1 640 0
+ 1743              		.cfi_startproc
+ 1744              		@ args = 0, pretend = 0, frame = 0
+ 1745              		@ frame_needed = 0, uses_anonymous_args = 0
+ 1746              	.LVL194:
+ 1747 0000 10B5     		push	{r4, lr}
+ 1748              	.LCFI34:
+ 1749              		.cfi_def_cfa_offset 8
+ 1750              		.cfi_offset 4, -8
+ 1751              		.cfi_offset 14, -4
+ 1752 0002 82B0     		sub	sp, sp, #8
+ 1753              	.LCFI35:
+ 1754              		.cfi_def_cfa_offset 16
+ 641:Ourtasks/canwinch_ldrproto.c **** /*	
+ 642:Ourtasks/canwinch_ldrproto.c **** 	#define LDR_SET_ADDR	1	// 5 Set address pointer (not FLASH) (bytes 2-5):  Respond with last writte
+ 643:Ourtasks/canwinch_ldrproto.c **** 	#define LDR_SET_ADDR_FL	2	// 5 Set address pointer (FLASH) (bytes 2-5):  Respond with last written
+ 644:Ourtasks/canwinch_ldrproto.c **** 	#define LDR_CRC		3	// 8 Get CRC: 2-4 = count; 5-8 = start address 
+ 645:Ourtasks/canwinch_ldrproto.c **** 	#define LDR_ACK		4	// 1 ACK: Positive acknowledge (Get next something)
+ 646:Ourtasks/canwinch_ldrproto.c **** 	#define LDR_NACK	5	// 1 NACK: Negative acknowledge (So? How do we know it is wrong?)
+ 647:Ourtasks/canwinch_ldrproto.c **** 	#define LDR_JMP		6	// 5 Jump: to address supplied (bytes 2-5)
+ 648:Ourtasks/canwinch_ldrproto.c **** 	#define LDR_WRBLK	7	// 1 Done with block: write block with whatever you have.
+ 649:Ourtasks/canwinch_ldrproto.c **** 	#define LDR_RESET	8	// 1 RESET: Execute a software forced RESET
+ 650:Ourtasks/canwinch_ldrproto.c **** 	#define LDR_XON		9	// 1 Resume sending
+ARM GAS  /tmp/ccRCtQQE.s 			page 44
+
+
+ 651:Ourtasks/canwinch_ldrproto.c **** 	#define LDR_XOFF	10	// 1 Stop sending
+ 652:Ourtasks/canwinch_ldrproto.c **** 	#define LDR_FLASHSIZE	11	// 1 Get flash size; bytes 2-3 = flash block size (short)
+ 653:Ourtasks/canwinch_ldrproto.c **** 	#define LDR_ADDR_OOB	12	// 1 Address is out-of-bounds
+ 654:Ourtasks/canwinch_ldrproto.c **** 	#define LDR_DLC_ERR	13	// 1 Unexpected DLC
+ 655:Ourtasks/canwinch_ldrproto.c **** 	#define LDR_FIXEDADDR	14	// 5 Get address of flash with fixed loader info (e.g. unique CAN ID)
+ 656:Ourtasks/canwinch_ldrproto.c **** 	#define LDR_RD4		15	// 5 Read 4 bytes at address (bytes 2-5)
+ 657:Ourtasks/canwinch_ldrproto.c **** 	#define LDR_APPOFFSET	16	// 5 Get address where application begins storing.
+ 658:Ourtasks/canwinch_ldrproto.c **** 	#define LDR_HIGHFLASHH	17	// 5 Get address of beginning of struct with crc check and CAN ID info f
+ 659:Ourtasks/canwinch_ldrproto.c **** 	#define LDR_HIGHFLASHP	18	// 5 Get address of beginning of struct with app calibrations, parameter
+ 660:Ourtasks/canwinch_ldrproto.c **** 	#define LDR_ASCII_SW	19	// 2 Switch mode to send printf ASCII in CAN msgs
+ 661:Ourtasks/canwinch_ldrproto.c **** 	#define LDR_ASCII_DAT	20	// 3-8  1=line position;2-8=ASCII chars
+ 662:Ourtasks/canwinch_ldrproto.c **** 	#define LDR_WRVAL_PTR	21	// 2-8 Write: 2-8=bytes to be written via address ptr previous set.
+ 663:Ourtasks/canwinch_ldrproto.c **** 	#define LDR_WRVAL_AI	22	// 8 Write: 2=memory area; 3-4=index; 5-8=one 4 byte value
+ 664:Ourtasks/canwinch_ldrproto.c **** 
+ 665:Ourtasks/canwinch_ldrproto.c **** */
+ 666:Ourtasks/canwinch_ldrproto.c **** //printf("Q: %02X\n\r",p->cd.uc[0]);  // Debug: Display command codes coming in
+ 667:Ourtasks/canwinch_ldrproto.c **** 	/* Here, we have a command in the ID field. */
+ 668:Ourtasks/canwinch_ldrproto.c **** 	switch (p->cd.uc[0])	// Command code
+ 1755              		.loc 1 668 0
+ 1756 0004 017A     		ldrb	r1, [r0, #8]	@ zero_extendqisi2
+ 1757 0006 4B1E     		subs	r3, r1, #1
+ 1758 0008 142B     		cmp	r3, #20
+ 1759 000a 3CD8     		bhi	.L134
+ 1760 000c DFE803F0 		tbb	[pc, r3]
+ 1761              	.L136:
+ 1762 0010 0B       		.byte	(.L135-.L136)/2
+ 1763 0011 3B       		.byte	(.L134-.L136)/2
+ 1764 0012 17       		.byte	(.L137-.L136)/2
+ 1765 0013 48       		.byte	(.L133-.L136)/2
+ 1766 0014 48       		.byte	(.L133-.L136)/2
+ 1767 0015 0E       		.byte	(.L139-.L136)/2
+ 1768 0016 11       		.byte	(.L140-.L136)/2
+ 1769 0017 14       		.byte	(.L141-.L136)/2
+ 1770 0018 48       		.byte	(.L133-.L136)/2
+ 1771 0019 48       		.byte	(.L133-.L136)/2
+ 1772 001a 1A       		.byte	(.L142-.L136)/2
+ 1773 001b 3B       		.byte	(.L134-.L136)/2
+ 1774 001c 3B       		.byte	(.L134-.L136)/2
+ 1775 001d 1D       		.byte	(.L143-.L136)/2
+ 1776 001e 21       		.byte	(.L144-.L136)/2
+ 1777 001f 24       		.byte	(.L145-.L136)/2
+ 1778 0020 28       		.byte	(.L146-.L136)/2
+ 1779 0021 2C       		.byte	(.L147-.L136)/2
+ 1780 0022 3B       		.byte	(.L134-.L136)/2
+ 1781 0023 3B       		.byte	(.L134-.L136)/2
+ 1782 0024 2F       		.byte	(.L148-.L136)/2
+ 1783 0025 00       		.p2align 1
+ 1784              	.L135:
+ 669:Ourtasks/canwinch_ldrproto.c **** 	{
+ 670:Ourtasks/canwinch_ldrproto.c **** 	case LDR_SET_ADDR: // Set address pointer (bytes 2-5):  Respond with last written address.
+ 671:Ourtasks/canwinch_ldrproto.c **** 		do_set_addr(p);
+ 1785              		.loc 1 671 0
+ 1786 0026 FFF7FEFF 		bl	do_set_addr
+ 1787              	.LVL195:
+ 672:Ourtasks/canwinch_ldrproto.c **** 		break;
+ 1788              		.loc 1 672 0
+ 1789 002a 39E0     		b	.L133
+ARM GAS  /tmp/ccRCtQQE.s 			page 45
+
+
+ 1790              	.LVL196:
+ 1791              	.L139:
+ 673:Ourtasks/canwinch_ldrproto.c **** 
+ 674:Ourtasks/canwinch_ldrproto.c **** 	case LDR_ACK:		// ACK: Positive acknowledge
+ 675:Ourtasks/canwinch_ldrproto.c **** 		break;
+ 676:Ourtasks/canwinch_ldrproto.c **** 
+ 677:Ourtasks/canwinch_ldrproto.c **** 	case LDR_NACK:		// NACK: Negative acknowledge
+ 678:Ourtasks/canwinch_ldrproto.c **** 		break;
+ 679:Ourtasks/canwinch_ldrproto.c **** 
+ 680:Ourtasks/canwinch_ldrproto.c **** 	case LDR_JMP:		// Jump: to address supplied
+ 681:Ourtasks/canwinch_ldrproto.c **** 		do_jump(p);
+ 1792              		.loc 1 681 0
+ 1793 002c FFF7FEFF 		bl	do_jump
+ 1794              	.LVL197:
+ 682:Ourtasks/canwinch_ldrproto.c **** 		break;
+ 1795              		.loc 1 682 0
+ 1796 0030 36E0     		b	.L133
+ 1797              	.LVL198:
+ 1798              	.L140:
+ 683:Ourtasks/canwinch_ldrproto.c **** 
+ 684:Ourtasks/canwinch_ldrproto.c **** 	case LDR_WRBLK:		// Done with block: write block with whatever you have..
+ 685:Ourtasks/canwinch_ldrproto.c **** 		do_wrblk(p);
+ 1799              		.loc 1 685 0
+ 1800 0032 FFF7FEFF 		bl	do_wrblk
+ 1801              	.LVL199:
+ 686:Ourtasks/canwinch_ldrproto.c **** 		break;
+ 1802              		.loc 1 686 0
+ 1803 0036 33E0     		b	.L133
+ 1804              	.LVL200:
+ 1805              	.L141:
+ 687:Ourtasks/canwinch_ldrproto.c **** 
+ 688:Ourtasks/canwinch_ldrproto.c **** 	case LDR_RESET:		// RESET: Execute a software forced RESET for this unit only.
+ 689:Ourtasks/canwinch_ldrproto.c **** 		system_reset();	// Cause a RESET
+ 1806              		.loc 1 689 0
+ 1807 0038 FFF7FEFF 		bl	system_reset
+ 1808              	.LVL201:
+ 690:Ourtasks/canwinch_ldrproto.c **** 		break;
+ 1809              		.loc 1 690 0
+ 1810 003c 30E0     		b	.L133
+ 1811              	.LVL202:
+ 1812              	.L137:
+ 691:Ourtasks/canwinch_ldrproto.c **** 
+ 692:Ourtasks/canwinch_ldrproto.c **** 	case LDR_CRC:		// Get CRC: given count | start address, compute CRC and respond with it.
+ 693:Ourtasks/canwinch_ldrproto.c **** 		do_crc(p);
+ 1813              		.loc 1 693 0
+ 1814 003e FFF7FEFF 		bl	do_crc
+ 1815              	.LVL203:
+ 694:Ourtasks/canwinch_ldrproto.c **** 		break;	
+ 1816              		.loc 1 694 0
+ 1817 0042 2DE0     		b	.L133
+ 1818              	.LVL204:
+ 1819              	.L142:
+ 695:Ourtasks/canwinch_ldrproto.c **** 	
+ 696:Ourtasks/canwinch_ldrproto.c **** 	case LDR_XON:		// Resume sending
+ 697:Ourtasks/canwinch_ldrproto.c **** 		break;
+ 698:Ourtasks/canwinch_ldrproto.c **** 
+ 699:Ourtasks/canwinch_ldrproto.c **** 	case LDR_XOFF:		// Stop sending: response to our sending LDR_XOFF msg.
+ARM GAS  /tmp/ccRCtQQE.s 			page 46
+
+
+ 700:Ourtasks/canwinch_ldrproto.c **** 		break;
+ 701:Ourtasks/canwinch_ldrproto.c **** 
+ 702:Ourtasks/canwinch_ldrproto.c **** 	case LDR_FLASHSIZE:	// Send flash size
+ 703:Ourtasks/canwinch_ldrproto.c **** 		do_flashsize(p);
+ 1820              		.loc 1 703 0
+ 1821 0044 FFF7FEFF 		bl	do_flashsize
+ 1822              	.LVL205:
+ 704:Ourtasks/canwinch_ldrproto.c **** 		break;
+ 1823              		.loc 1 704 0
+ 1824 0048 2AE0     		b	.L133
+ 1825              	.LVL206:
+ 1826              	.L143:
+ 705:Ourtasks/canwinch_ldrproto.c **** 
+ 706:Ourtasks/canwinch_ldrproto.c **** 	case LDR_FIXEDADDR:	// Send address ahead of fixed address block
+ 707:Ourtasks/canwinch_ldrproto.c **** 		do_getfromdaddress(p, (uint8_t*)0x08000004);
+ 1827              		.loc 1 707 0
+ 1828 004a 1649     		ldr	r1, .L150
+ 1829 004c FFF7FEFF 		bl	do_getfromdaddress
+ 1830              	.LVL207:
+ 708:Ourtasks/canwinch_ldrproto.c **** 		break;
+ 1831              		.loc 1 708 0
+ 1832 0050 26E0     		b	.L133
+ 1833              	.LVL208:
+ 1834              	.L144:
+ 709:Ourtasks/canwinch_ldrproto.c **** 
+ 710:Ourtasks/canwinch_ldrproto.c **** 	case LDR_RD4:		// Send address of fixed param flash area
+ 711:Ourtasks/canwinch_ldrproto.c **** 		do_rd4(p);
+ 1835              		.loc 1 711 0
+ 1836 0052 FFF7FEFF 		bl	do_rd4
+ 1837              	.LVL209:
+ 712:Ourtasks/canwinch_ldrproto.c **** 		break;
+ 1838              		.loc 1 712 0
+ 1839 0056 23E0     		b	.L133
+ 1840              	.LVL210:
+ 1841              	.L145:
+ 713:Ourtasks/canwinch_ldrproto.c **** 
+ 714:Ourtasks/canwinch_ldrproto.c **** 	case LDR_APPOFFSET:	// Send address of where app loads
+ 715:Ourtasks/canwinch_ldrproto.c **** 		do_send4(p, (uint32_t)&__appoffset);
+ 1842              		.loc 1 715 0
+ 1843 0058 1349     		ldr	r1, .L150+4
+ 1844 005a FFF7FEFF 		bl	do_send4
+ 1845              	.LVL211:
+ 716:Ourtasks/canwinch_ldrproto.c **** 		break;
+ 1846              		.loc 1 716 0
+ 1847 005e 1FE0     		b	.L133
+ 1848              	.LVL212:
+ 1849              	.L146:
+ 717:Ourtasks/canwinch_ldrproto.c **** 
+ 718:Ourtasks/canwinch_ldrproto.c **** 	case LDR_HIGHFLASHH:	// Send address of high flash area
+ 719:Ourtasks/canwinch_ldrproto.c **** 		do_send4(p, (uint32_t)&__highflashlayout);
+ 1850              		.loc 1 719 0
+ 1851 0060 1249     		ldr	r1, .L150+8
+ 1852 0062 FFF7FEFF 		bl	do_send4
+ 1853              	.LVL213:
+ 720:Ourtasks/canwinch_ldrproto.c **** 		break;
+ 1854              		.loc 1 720 0
+ 1855 0066 1BE0     		b	.L133
+ARM GAS  /tmp/ccRCtQQE.s 			page 47
+
+
+ 1856              	.LVL214:
+ 1857              	.L147:
+ 721:Ourtasks/canwinch_ldrproto.c **** 
+ 722:Ourtasks/canwinch_ldrproto.c **** 	case LDR_HIGHFLASHP:	// Get address of beginning of crc check info for app
+ 723:Ourtasks/canwinch_ldrproto.c **** 		do_getflashpaddr(p);
+ 1858              		.loc 1 723 0
+ 1859 0068 FFF7FEFF 		bl	do_getflashpaddr
+ 1860              	.LVL215:
+ 724:Ourtasks/canwinch_ldrproto.c **** 		break;
+ 1861              		.loc 1 724 0
+ 1862 006c 18E0     		b	.L133
+ 1863              	.LVL216:
+ 1864              	.L148:
+ 725:Ourtasks/canwinch_ldrproto.c **** 
+ 726:Ourtasks/canwinch_ldrproto.c **** 	case LDR_WRVAL_PTR:	// Write: 2-8=bytes to be written via address ptr previous set
+ 727:Ourtasks/canwinch_ldrproto.c **** 		// Write data starting at payload[1], dlc holds byte ct: 1-7
+ 728:Ourtasks/canwinch_ldrproto.c **** 		do_datawrite(&p->cd.uc[1], (0x7f & p->dlc) - 1, p);
+ 1865              		.loc 1 728 0
+ 1866 006e 4168     		ldr	r1, [r0, #4]
+ 1867 0070 01F07F01 		and	r1, r1, #127
+ 1868 0074 0246     		mov	r2, r0
+ 1869 0076 0139     		subs	r1, r1, #1
+ 1870 0078 0930     		adds	r0, r0, #9
+ 1871              	.LVL217:
+ 1872 007a FFF7FEFF 		bl	do_datawrite
+ 1873              	.LVL218:
+ 729:Ourtasks/canwinch_ldrproto.c **** 		sendcanCMD(LDR_ACK);
+ 1874              		.loc 1 729 0
+ 1875 007e 0420     		movs	r0, #4
+ 1876 0080 FFF7FEFF 		bl	sendcanCMD
+ 1877              	.LVL219:
+ 730:Ourtasks/canwinch_ldrproto.c **** 		break;
+ 1878              		.loc 1 730 0
+ 1879 0084 0CE0     		b	.L133
+ 1880              	.LVL220:
+ 1881              	.L134:
+ 731:Ourtasks/canwinch_ldrproto.c **** 
+ 732:Ourtasks/canwinch_ldrproto.c **** 	default:		// Not a defined command
+ 733:Ourtasks/canwinch_ldrproto.c **** 		err_bogus_cmds_cmds += 1;
+ 1882              		.loc 1 733 0
+ 1883 0086 0A4A     		ldr	r2, .L150+12
+ 1884 0088 1368     		ldr	r3, [r2]
+ 1885 008a 0133     		adds	r3, r3, #1
+ 1886 008c 1360     		str	r3, [r2]
+ 734:Ourtasks/canwinch_ldrproto.c **** printf("BOGUS CMD CODE: %X %08X %X  %08X %08X\n\r",
+ 735:Ourtasks/canwinch_ldrproto.c **** 	(unsigned int)p->cd.uc[0], 
+ 736:Ourtasks/canwinch_ldrproto.c **** 	(unsigned int)p->id, 
+ 1887              		.loc 1 736 0
+ 1888 008e 0268     		ldr	r2, [r0]
+ 737:Ourtasks/canwinch_ldrproto.c **** 	(unsigned int)p->dlc, 
+ 1889              		.loc 1 737 0
+ 1890 0090 4368     		ldr	r3, [r0, #4]
+ 738:Ourtasks/canwinch_ldrproto.c **** 	(unsigned int)p->cd.ui[0], 
+ 1891              		.loc 1 738 0
+ 1892 0092 8468     		ldr	r4, [r0, #8]
+ 739:Ourtasks/canwinch_ldrproto.c **** 	(unsigned int)p->cd.ui[1]);
+ 1893              		.loc 1 739 0
+ARM GAS  /tmp/ccRCtQQE.s 			page 48
+
+
+ 1894 0094 C068     		ldr	r0, [r0, #12]
+ 1895              	.LVL221:
+ 734:Ourtasks/canwinch_ldrproto.c **** 	(unsigned int)p->cd.uc[0], 
+ 1896              		.loc 1 734 0
+ 1897 0096 0190     		str	r0, [sp, #4]
+ 1898 0098 0094     		str	r4, [sp]
+ 1899 009a 0648     		ldr	r0, .L150+16
+ 1900 009c FFF7FEFF 		bl	printf
+ 1901              	.LVL222:
+ 1902              	.L133:
+ 740:Ourtasks/canwinch_ldrproto.c **** 		break;
+ 741:Ourtasks/canwinch_ldrproto.c **** 	}
+ 742:Ourtasks/canwinch_ldrproto.c **** 	return;
+ 743:Ourtasks/canwinch_ldrproto.c **** }
+ 1903              		.loc 1 743 0
+ 1904 00a0 02B0     		add	sp, sp, #8
+ 1905              	.LCFI36:
+ 1906              		.cfi_def_cfa_offset 8
+ 1907              		@ sp needed
+ 1908 00a2 10BD     		pop	{r4, pc}
+ 1909              	.L151:
+ 1910              		.align	2
+ 1911              	.L150:
+ 1912 00a4 04000008 		.word	134217732
+ 1913 00a8 00000000 		.word	__appoffset
+ 1914 00ac 00000000 		.word	__highflashlayout
+ 1915 00b0 00000000 		.word	.LANCHOR10
+ 1916 00b4 14030000 		.word	.LC28
+ 1917              		.cfi_endproc
+ 1918              	.LFE155:
+ 1920              		.section	.text.canwinch_ldrproto_poll,"ax",%progbits
+ 1921              		.align	2
+ 1922              		.global	canwinch_ldrproto_poll
+ 1923              		.thumb
+ 1924              		.thumb_func
+ 1926              	canwinch_ldrproto_poll:
+ 1927              	.LFB156:
+ 744:Ourtasks/canwinch_ldrproto.c **** /* **************************************************************************************
+ 745:Ourtasks/canwinch_ldrproto.c ****  * void canwinch_ldrproto_poll(void);
+ 746:Ourtasks/canwinch_ldrproto.c ****  * @param	: pctl = pointer control block for CAN module being used
+ 747:Ourtasks/canwinch_ldrproto.c ****  * @brief	: If msg is for this unit, then do something with it.
+ 748:Ourtasks/canwinch_ldrproto.c ****  * ************************************************************************************** */
+ 749:Ourtasks/canwinch_ldrproto.c **** void canwinch_ldrproto_poll(void)
+ 750:Ourtasks/canwinch_ldrproto.c **** {
+ 1928              		.loc 1 750 0
+ 1929              		.cfi_startproc
+ 1930              		@ args = 0, pretend = 0, frame = 0
+ 1931              		@ frame_needed = 0, uses_anonymous_args = 0
+ 1932 0000 08B5     		push	{r3, lr}
+ 1933              	.LCFI37:
+ 1934              		.cfi_def_cfa_offset 8
+ 1935              		.cfi_offset 3, -8
+ 1936              		.cfi_offset 14, -4
+ 751:Ourtasks/canwinch_ldrproto.c **** 	struct CANRCVBUF* pcan;
+ 752:Ourtasks/canwinch_ldrproto.c **** 
+ 753:Ourtasks/canwinch_ldrproto.c **** 	/* Check incoming msgs. */
+ 754:Ourtasks/canwinch_ldrproto.c **** 	while ((pcan = can_driver_peek0(pctl1)) != NULL) // RX0 have a msg?
+ARM GAS  /tmp/ccRCtQQE.s 			page 49
+
+
+ 1937              		.loc 1 754 0
+ 1938 0002 03E0     		b	.L153
+ 1939              	.LVL223:
+ 1940              	.L154:
+ 755:Ourtasks/canwinch_ldrproto.c **** 	{ // Here we have a FIFO0 CAN msg
+ 756:Ourtasks/canwinch_ldrproto.c **** //if ((pcan->id & 0x0000000e) == 0x0000000c) 
+ 757:Ourtasks/canwinch_ldrproto.c **** //	printf ("X: %08X %d %08X %08X\n\r",pcan->id,pcan->dlc,pcan->cd.ui[0],pcan->cd.ui[1]);
+ 758:Ourtasks/canwinch_ldrproto.c **** //printf ("A: %08X\n\r",pcan->id);
+ 759:Ourtasks/canwinch_ldrproto.c **** 
+ 760:Ourtasks/canwinch_ldrproto.c **** 
+ 761:Ourtasks/canwinch_ldrproto.c **** 		/* Select msg if matches our unit CAN ID  */
+ 762:Ourtasks/canwinch_ldrproto.c **** 		if ( (pcan->id & 0x0ffffffe) == fixedaddress.canid_ldr)
+ 763:Ourtasks/canwinch_ldrproto.c **** 		{ // Here CAN ID is for this unit/loader
+ 764:Ourtasks/canwinch_ldrproto.c **** //printf ("X: %08X %d %08X %08X\n\r",pcan->id,pcan->dlc,pcan->cd.ui[0],pcan->cd.ui[1]);
+ 765:Ourtasks/canwinch_ldrproto.c **** //$			do_cmd_cmd(pcan);		// Execute command 
+ 766:Ourtasks/canwinch_ldrproto.c **** 		}
+ 767:Ourtasks/canwinch_ldrproto.c **** 		can_driver_toss0(pctl1);	// Release buffer block
+ 1941              		.loc 1 767 0
+ 1942 0004 0A4B     		ldr	r3, .L158
+ 1943 0006 1868     		ldr	r0, [r3]
+ 1944              	.LVL224:
+ 1945 0008 FFF7FEFF 		bl	can_driver_toss0
+ 1946              	.LVL225:
+ 1947              	.L153:
+ 754:Ourtasks/canwinch_ldrproto.c **** 	{ // Here we have a FIFO0 CAN msg
+ 1948              		.loc 1 754 0
+ 1949 000c 084B     		ldr	r3, .L158
+ 1950 000e 1868     		ldr	r0, [r3]
+ 1951 0010 FFF7FEFF 		bl	can_driver_peek0
+ 1952              	.LVL226:
+ 1953 0014 0028     		cmp	r0, #0
+ 1954 0016 F5D1     		bne	.L154
+ 1955 0018 03E0     		b	.L155
+ 1956              	.LVL227:
+ 1957              	.L156:
+ 768:Ourtasks/canwinch_ldrproto.c **** 	}
+ 769:Ourtasks/canwinch_ldrproto.c **** 	/* Dump FIFO1 msgs. */
+ 770:Ourtasks/canwinch_ldrproto.c **** 	while ((can_driver_peek1(pctl1)) != NULL)	// RX1 have a msg?
+ 771:Ourtasks/canwinch_ldrproto.c **** 		can_driver_toss1(pctl1); 	// Release buffer block
+ 1958              		.loc 1 771 0
+ 1959 001a 054B     		ldr	r3, .L158
+ 1960 001c 1868     		ldr	r0, [r3]
+ 1961 001e FFF7FEFF 		bl	can_driver_toss1
+ 1962              	.LVL228:
+ 1963              	.L155:
+ 770:Ourtasks/canwinch_ldrproto.c **** 		can_driver_toss1(pctl1); 	// Release buffer block
+ 1964              		.loc 1 770 0
+ 1965 0022 034B     		ldr	r3, .L158
+ 1966 0024 1868     		ldr	r0, [r3]
+ 1967 0026 FFF7FEFF 		bl	can_driver_peek1
+ 1968              	.LVL229:
+ 1969 002a 0028     		cmp	r0, #0
+ 1970 002c F5D1     		bne	.L156
+ 772:Ourtasks/canwinch_ldrproto.c **** 	return;
+ 773:Ourtasks/canwinch_ldrproto.c **** }
+ 1971              		.loc 1 773 0
+ 1972 002e 08BD     		pop	{r3, pc}
+ARM GAS  /tmp/ccRCtQQE.s 			page 50
+
+
+ 1973              	.L159:
+ 1974              		.align	2
+ 1975              	.L158:
+ 1976 0030 00000000 		.word	pctl1
+ 1977              		.cfi_endproc
+ 1978              	.LFE156:
+ 1980              		.global	table
+ 1981              		.global	ldr_phase
+ 1982              		.global	sw_flash1sttime
+ 1983              		.global	flashblocksize
+ 1984              		.comm	flash_hi,4,4
+ 1985              		.global	err_novalidadd
+ 1986              		.global	err_bogus_cmds_cmds
+ 1987              		.global	err_bogus_cmds
+ 1988              		.global	sw_padd
+ 1989              		.comm	padd_start,4,4
+ 1990              		.comm	padd,4,4
+ 1991              		.section	.bss.can_msg_cmd,"aw",%nobits
+ 1992              		.align	3
+ 1993              		.set	.LANCHOR2,. + 0
+ 1996              	can_msg_cmd:
+ 1997 0000 00000000 		.space	16
+ 1997      00000000 
+ 1997      00000000 
+ 1997      00000000 
+ 1998              		.section	.bss.err_novalidadd,"aw",%nobits
+ 1999              		.align	2
+ 2000              		.set	.LANCHOR9,. + 0
+ 2003              	err_novalidadd:
+ 2004 0000 00000000 		.space	4
+ 2005              		.section	.bss.can_msg_wr,"aw",%nobits
+ 2006              		.align	3
+ 2007              		.set	.LANCHOR6,. + 0
+ 2010              	can_msg_wr:
+ 2011 0000 00000000 		.space	16
+ 2011      00000000 
+ 2011      00000000 
+ 2011      00000000 
+ 2012              		.section	.data.flashblocksize,"aw",%progbits
+ 2013              		.align	2
+ 2014              		.set	.LANCHOR0,. + 0
+ 2017              	flashblocksize:
+ 2018 0000 00080000 		.word	2048
+ 2019              		.section	.rodata.table,"a",%progbits
+ 2020              		.align	2
+ 2021              		.set	.LANCHOR7,. + 0
+ 2024              	table:
+ 2025 0000 02       		.byte	2
+ 2026 0001 04       		.byte	4
+ 2027 0002 04       		.byte	4
+ 2028 0003 08       		.byte	8
+ 2029 0004 02       		.byte	2
+ 2030 0005 02       		.byte	2
+ 2031 0006 02       		.byte	2
+ 2032 0007 02       		.byte	2
+ 2033 0008 02       		.byte	2
+ 2034 0009 04       		.byte	4
+ARM GAS  /tmp/ccRCtQQE.s 			page 51
+
+
+ 2035 000a 04       		.byte	4
+ 2036 000b 04       		.byte	4
+ 2037 000c 02       		.byte	2
+ 2038 000d 02       		.byte	2
+ 2039 000e 02       		.byte	2
+ 2040 000f 02       		.byte	2
+ 2041              		.section	.bss.err_bogus_cmds_cmds,"aw",%nobits
+ 2042              		.align	2
+ 2043              		.set	.LANCHOR10,. + 0
+ 2046              	err_bogus_cmds_cmds:
+ 2047 0000 00000000 		.space	4
+ 2048              		.section	.bss.can_msg_rd,"aw",%nobits
+ 2049              		.align	3
+ 2050              		.set	.LANCHOR5,. + 0
+ 2053              	can_msg_rd:
+ 2054 0000 00000000 		.space	16
+ 2054      00000000 
+ 2054      00000000 
+ 2054      00000000 
+ 2055              		.section	.bss.err_bogus_cmds,"aw",%nobits
+ 2056              		.align	2
+ 2059              	err_bogus_cmds:
+ 2060 0000 00000000 		.space	4
+ 2061              		.section	.rodata.str1.4,"aMS",%progbits,1
+ 2062              		.align	2
+ 2063              	.LC0:
+ 2064 0000 7772626C 		.ascii	"wrblk: %d %X %X %08X %08X\012\015\000"
+ 2064      6B3A2025 
+ 2064      64202558 
+ 2064      20255820 
+ 2064      25303858 
+ 2065              	.LC1:
+ 2066 001c 7772626C 		.ascii	"wrblk: CASE 0: no need to write block\012\015\000"
+ 2066      6B3A2043 
+ 2066      41534520 
+ 2066      303A206E 
+ 2066      6F206E65 
+ 2067              	.LC2:
+ 2068 0044 7772626C 		.ascii	"wrblk: CASE 2: erase block before writing\012\015\000"
+ 2068      6B3A2043 
+ 2068      41534520 
+ 2068      323A2065 
+ 2068      72617365 
+ 2069              	.LC3:
+ 2070 0070 7772626C 		.ascii	"wrblk: CASE 1: writing block\012\015\000"
+ 2070      6B3A2043 
+ 2070      41534520 
+ 2070      313A2077 
+ 2070      72697469 
+ 2071 008f 00       		.space	1
+ 2072              	.LC4:
+ 2073 0090 7772626C 		.ascii	"wrblk: pay[1] %X pay[2] %X\012\015\000"
+ 2073      6B3A2070 
+ 2073      61795B31 
+ 2073      5D202558 
+ 2073      20706179 
+ 2074 00ad 000000   		.space	3
+ARM GAS  /tmp/ccRCtQQE.s 			page 52
+
+
+ 2075              	.LC5:
+ 2076 00b0 7772626C 		.ascii	"wrblk: default: %d\012\015\000"
+ 2076      6B3A2064 
+ 2076      65666175 
+ 2076      6C743A20 
+ 2076      25640A0D 
+ 2077 00c5 000000   		.space	3
+ 2078              	.LC6:
+ 2079 00c8 70616464 		.ascii	"padd crossed block boundary: %08X  padd: %08x\012\015"
+ 2079      2063726F 
+ 2079      73736564 
+ 2079      20626C6F 
+ 2079      636B2062 
+ 2080 00f7 00       		.ascii	"\000"
+ 2081              	.LC7:
+ 2082 00f8 464C4153 		.ascii	"FLASH BLK SZE: %dB\012\015\000"
+ 2082      4820424C 
+ 2082      4B20535A 
+ 2082      453A2025 
+ 2082      64420A0D 
+ 2083 010d 000000   		.space	3
+ 2084              	.LC8:
+ 2085 0110 464C4153 		.ascii	"FLASH HI ADDR: 0x%08X\012\015\000"
+ 2085      48204849 
+ 2085      20414444 
+ 2085      523A2030 
+ 2085      78253038 
+ 2086              	.LC9:
+ 2087 0128 43414E20 		.ascii	"CAN ID's\012\015\000"
+ 2087      49442773 
+ 2087      0A0D00
+ 2088 0133 00       		.space	1
+ 2089              	.LC10:
+ 2090 0134 434D443A 		.ascii	"CMD: %08X\012\015\000"
+ 2090      20253038 
+ 2090      580A0D00 
+ 2091              	.LC11:
+ 2092 0140 5244203A 		.ascii	"RD : %08X\012\015\000"
+ 2092      20253038 
+ 2092      580A0D00 
+ 2093              	.LC12:
+ 2094 014c 5752203A 		.ascii	"WR : %08X\012\015\000"
+ 2094      20253038 
+ 2094      580A0D00 
+ 2095              	.LC13:
+ 2096 0158 4E41434B 		.ascii	"NACK0: %d %X %d %X %08X %08X\012\015\000"
+ 2096      303A2025 
+ 2096      64202558 
+ 2096      20256420 
+ 2096      25582025 
+ 2097 0177 00       		.space	1
+ 2098              	.LC14:
+ 2099 0178 4E414331 		.ascii	"NAC1K: %d %X %d %X %08X %08X\012\015\000"
+ 2099      4B3A2025 
+ 2099      64202558 
+ 2099      20256420 
+ 2099      25582025 
+ARM GAS  /tmp/ccRCtQQE.s 			page 53
+
+
+ 2100 0197 00       		.space	1
+ 2101              	.LC15:
+ 2102 0198 53656E64 		.ascii	"Send NACK: dlc not 8: %d\012\015\000"
+ 2102      204E4143 
+ 2102      4B3A2064 
+ 2102      6C63206E 
+ 2102      6F742038 
+ 2103 01b3 00       		.space	1
+ 2104              	.LC16:
+ 2105 01b4 53656E64 		.ascii	"Send NACK start addr out of range: %08X %X %08X %08"
+ 2105      204E4143 
+ 2105      4B207374 
+ 2105      61727420 
+ 2105      61646472 
+ 2106 01e7 580A0D00 		.ascii	"X\012\015\000"
+ 2107 01eb 00       		.space	1
+ 2108              	.LC17:
+ 2109 01ec 48617264 		.ascii	"Hard Coded address check out-of-range:\000"
+ 2109      20436F64 
+ 2109      65642061 
+ 2109      64647265 
+ 2109      73732063 
+ 2110 0213 00       		.space	1
+ 2111              	.LC18:
+ 2112 0214 72635F63 		.ascii	"rc_crc32: %08X %08X %08X\012\015\000"
+ 2112      72633332 
+ 2112      3A202530 
+ 2112      38582025 
+ 2112      30385820 
+ 2113 022f 00       		.space	1
+ 2114              	.LC19:
+ 2115 0230 53656E64 		.ascii	"Send crc-32: %08X\012\015\000"
+ 2115      20637263 
+ 2115      2D33323A 
+ 2115      20253038 
+ 2115      580A0D00 
+ 2116              	.LC20:
+ 2117 0244 583A2066 		.ascii	"X: flashblocksize: %X %X %X %X\012\015\000"
+ 2117      6C617368 
+ 2117      626C6F63 
+ 2117      6B73697A 
+ 2117      653A2025 
+ 2118 0265 000000   		.space	3
+ 2119              	.LC21:
+ 2120 0268 52343A20 		.ascii	"R4: read addr: %X %X %X %X %X %X\012\015\000"
+ 2120      72656164 
+ 2120      20616464 
+ 2120      723A2025 
+ 2120      58202558 
+ 2121 028b 00       		.space	1
+ 2122              	.LC22:
+ 2123 028c 646F5F67 		.ascii	"do_getfromdaddress: addr not OK: %08X\012\015\000"
+ 2123      65746672 
+ 2123      6F6D6461 
+ 2123      64647265 
+ 2123      73733A20 
+ 2124              	.LC23:
+ARM GAS  /tmp/ccRCtQQE.s 			page 54
+
+
+ 2125 02b4 47455441 		.ascii	"GETADDR: read addr: %X %X %X %X %X\012\015\000"
+ 2125      4444523A 
+ 2125      20726561 
+ 2125      64206164 
+ 2125      64723A20 
+ 2126 02d9 000000   		.space	3
+ 2127              	.LC24:
+ 2128 02dc 73656E64 		.ascii	"send4: %X %X %X %X %X %X\012\015\000"
+ 2128      343A2025 
+ 2128      58202558 
+ 2128      20255820 
+ 2128      25582025 
+ 2129 02f7 00       		.space	1
+ 2130              	.LC25:
+ 2131 02f8 47455420 		.ascii	"GET FLASHP addr \000"
+ 2131      464C4153 
+ 2131      48502061 
+ 2131      64647220 
+ 2131      00
+ 2132 0309 000000   		.space	3
+ 2133              	.LC26:
+ 2134 030c 20255800 		.ascii	" %X\000"
+ 2135              	.LC27:
+ 2136 0310 0A0D00   		.ascii	"\012\015\000"
+ 2137 0313 00       		.space	1
+ 2138              	.LC28:
+ 2139 0314 424F4755 		.ascii	"BOGUS CMD CODE: %X %08X %X  %08X %08X\012\015\000"
+ 2139      5320434D 
+ 2139      4420434F 
+ 2139      44453A20 
+ 2139      25582025 
+ 2140              		.section	.bss.flblkbuff,"aw",%nobits
+ 2141              		.align	3
+ 2142              		.set	.LANCHOR1,. + 0
+ 2145              	flblkbuff:
+ 2146 0000 00000000 		.space	2064
+ 2146      00000000 
+ 2146      00000000 
+ 2146      00000000 
+ 2146      00000000 
+ 2147              		.section	.bss.ldr_phase,"aw",%nobits
+ 2148              		.align	2
+ 2149              		.set	.LANCHOR4,. + 0
+ 2152              	ldr_phase:
+ 2153 0000 00000000 		.space	4
+ 2154              		.section	.bss.sw_padd,"aw",%nobits
+ 2155              		.align	2
+ 2156              		.set	.LANCHOR8,. + 0
+ 2159              	sw_padd:
+ 2160 0000 00000000 		.space	4
+ 2161              		.section	.bss.debugPctr,"aw",%nobits
+ 2162              		.align	2
+ 2163              		.set	.LANCHOR3,. + 0
+ 2166              	debugPctr:
+ 2167 0000 00000000 		.space	4
+ 2168              		.section	.bss.sw_flash1sttime,"aw",%nobits
+ 2169              		.align	2
+ARM GAS  /tmp/ccRCtQQE.s 			page 55
+
+
+ 2172              	sw_flash1sttime:
+ 2173 0000 00000000 		.space	4
+ 2174              		.text
+ 2175              	.Letext0:
+ 2176              		.file 2 "/home/deh/launchpad/gcc-arm-none-eabi-5_4-2016q3/arm-none-eabi/include/machine/_default_t
+ 2177              		.file 3 "/home/deh/launchpad/gcc-arm-none-eabi-5_4-2016q3/arm-none-eabi/include/sys/_stdint.h"
+ 2178              		.file 4 "Ourwares/common_can.h"
+ 2179              		.file 5 "Ourwares/can_driver.h"
+ 2180              		.file 6 "../../../GliderWinchCommons/embed/svn_common/trunk/common_fixedaddress.h"
+ 2181              		.file 7 "Drivers/CMSIS/Include/cmsis_gcc.h"
+ 2182              		.file 8 "Drivers/CMSIS/Include/core_cm4.h"
+ 2183              		.file 9 "/home/deh/launchpad/gcc-arm-none-eabi-5_4-2016q3/arm-none-eabi/include/stdio.h"
+ 2184              		.file 10 "Ourtasks/flash_write.h"
+ 2185              		.file 11 "Ourtasks/system_reset.h"
+ARM GAS  /tmp/ccRCtQQE.s 			page 56
+
+
+DEFINED SYMBOLS
+                            *ABS*:00000000 canwinch_ldrproto.c
+     /tmp/ccRCtQQE.s:22     .text.flbblkbuff_init:00000000 $t
+     /tmp/ccRCtQQE.s:26     .text.flbblkbuff_init:00000000 flbblkbuff_init
+     /tmp/ccRCtQQE.s:52     .text.flbblkbuff_init:00000020 $d
+                            *COM*:00000004 padd
+     /tmp/ccRCtQQE.s:59     .text.flashblockinit:00000000 $t
+     /tmp/ccRCtQQE.s:63     .text.flashblockinit:00000000 flashblockinit
+     /tmp/ccRCtQQE.s:125    .text.flashblockinit:00000048 $d
+     /tmp/ccRCtQQE.s:132    .text.can_msg_put:00000000 $t
+     /tmp/ccRCtQQE.s:136    .text.can_msg_put:00000000 can_msg_put
+     /tmp/ccRCtQQE.s:161    .text.can_msg_put:00000014 $d
+     /tmp/ccRCtQQE.s:166    .text.sendcanCMD:00000000 $t
+     /tmp/ccRCtQQE.s:170    .text.sendcanCMD:00000000 sendcanCMD
+     /tmp/ccRCtQQE.s:197    .text.sendcanCMD:00000014 $d
+     /tmp/ccRCtQQE.s:202    .text.wrblk:00000000 $t
+     /tmp/ccRCtQQE.s:206    .text.wrblk:00000000 wrblk
+     /tmp/ccRCtQQE.s:245    .text.wrblk:0000002a $d
+     /tmp/ccRCtQQE.s:249    .text.wrblk:0000002e $t
+     /tmp/ccRCtQQE.s:311    .text.wrblk:00000088 $d
+     /tmp/ccRCtQQE.s:326    .text.writepayloadf1:00000000 $t
+     /tmp/ccRCtQQE.s:330    .text.writepayloadf1:00000000 writepayloadf1
+     /tmp/ccRCtQQE.s:434    .text.writepayloadf1:00000094 $d
+     /tmp/ccRCtQQE.s:443    .text.canwinch_ldrproto_init:00000000 $t
+     /tmp/ccRCtQQE.s:448    .text.canwinch_ldrproto_init:00000000 canwinch_ldrproto_init
+     /tmp/ccRCtQQE.s:526    .text.canwinch_ldrproto_init:00000060 $d
+                            *COM*:00000004 flash_hi
+     /tmp/ccRCtQQE.s:543    .text.mv2:00000000 $t
+     /tmp/ccRCtQQE.s:548    .text.mv2:00000000 mv2
+     /tmp/ccRCtQQE.s:566    .text.mv4:00000000 $t
+     /tmp/ccRCtQQE.s:571    .text.mv4:00000000 mv4
+     /tmp/ccRCtQQE.s:594    .text.copypayload:00000000 $t
+     /tmp/ccRCtQQE.s:598    .text.copypayload:00000000 copypayload
+     /tmp/ccRCtQQE.s:757    .text.copypayload:000000b0 $d
+     /tmp/ccRCtQQE.s:763    .text.do_jump:00000000 $t
+     /tmp/ccRCtQQE.s:767    .text.do_jump:00000000 do_jump
+     /tmp/ccRCtQQE.s:806    .text.do_dataread:00000000 $t
+     /tmp/ccRCtQQE.s:811    .text.do_dataread:00000000 do_dataread
+     /tmp/ccRCtQQE.s:864    .text.do_dataread:0000002c $d
+     /tmp/ccRCtQQE.s:869    .text.addressOK:00000000 $t
+     /tmp/ccRCtQQE.s:874    .text.addressOK:00000000 addressOK
+     /tmp/ccRCtQQE.s:923    .text.addressOK:00000030 $d
+     /tmp/ccRCtQQE.s:929    .text.do_datawrite:00000000 $t
+     /tmp/ccRCtQQE.s:934    .text.do_datawrite:00000000 do_datawrite
+     /tmp/ccRCtQQE.s:1060   .text.do_datawrite:00000090 $d
+     /tmp/ccRCtQQE.s:1071   .text.do_wrblk:00000000 $t
+     /tmp/ccRCtQQE.s:1076   .text.do_wrblk:00000000 do_wrblk
+     /tmp/ccRCtQQE.s:1105   .text.do_wrblk:00000018 $d
+     /tmp/ccRCtQQE.s:1110   .text.do_crc:00000000 $t
+     /tmp/ccRCtQQE.s:1115   .text.do_crc:00000000 do_crc
+     /tmp/ccRCtQQE.s:1242   .text.do_crc:00000090 $d
+     /tmp/ccRCtQQE.s:1254   .text.do_set_addr:00000000 $t
+     /tmp/ccRCtQQE.s:1259   .text.do_set_addr:00000000 do_set_addr
+     /tmp/ccRCtQQE.s:1346   .text.do_set_addr:00000064 $d
+                            *COM*:00000004 padd_start
+     /tmp/ccRCtQQE.s:1355   .text.do_flashsize:00000000 $t
+     /tmp/ccRCtQQE.s:1360   .text.do_flashsize:00000000 do_flashsize
+ARM GAS  /tmp/ccRCtQQE.s 			page 57
+
+
+     /tmp/ccRCtQQE.s:1409   .text.do_flashsize:0000002c $d
+     /tmp/ccRCtQQE.s:1415   .text.do_rd4:00000000 $t
+     /tmp/ccRCtQQE.s:1420   .text.do_rd4:00000000 do_rd4
+     /tmp/ccRCtQQE.s:1485   .text.do_rd4:0000003c $d
+     /tmp/ccRCtQQE.s:1490   .text.do_getfromdaddress:00000000 $t
+     /tmp/ccRCtQQE.s:1495   .text.do_getfromdaddress:00000000 do_getfromdaddress
+     /tmp/ccRCtQQE.s:1568   .text.do_getfromdaddress:00000044 $d
+     /tmp/ccRCtQQE.s:1574   .text.do_send4:00000000 $t
+     /tmp/ccRCtQQE.s:1579   .text.do_send4:00000000 do_send4
+     /tmp/ccRCtQQE.s:1636   .text.do_send4:00000038 $d
+     /tmp/ccRCtQQE.s:1641   .text.do_getflashpaddr:00000000 $t
+     /tmp/ccRCtQQE.s:1646   .text.do_getflashpaddr:00000000 do_getflashpaddr
+     /tmp/ccRCtQQE.s:1726   .text.do_getflashpaddr:00000050 $d
+     /tmp/ccRCtQQE.s:1735   .text.do_cmd_cmd:00000000 $t
+     /tmp/ccRCtQQE.s:1740   .text.do_cmd_cmd:00000000 do_cmd_cmd
+     /tmp/ccRCtQQE.s:1762   .text.do_cmd_cmd:00000010 $d
+     /tmp/ccRCtQQE.s:1912   .text.do_cmd_cmd:000000a4 $d
+     /tmp/ccRCtQQE.s:1921   .text.canwinch_ldrproto_poll:00000000 $t
+     /tmp/ccRCtQQE.s:1926   .text.canwinch_ldrproto_poll:00000000 canwinch_ldrproto_poll
+     /tmp/ccRCtQQE.s:1976   .text.canwinch_ldrproto_poll:00000030 $d
+     /tmp/ccRCtQQE.s:2024   .rodata.table:00000000 table
+     /tmp/ccRCtQQE.s:2152   .bss.ldr_phase:00000000 ldr_phase
+     /tmp/ccRCtQQE.s:2172   .bss.sw_flash1sttime:00000000 sw_flash1sttime
+     /tmp/ccRCtQQE.s:2017   .data.flashblocksize:00000000 flashblocksize
+     /tmp/ccRCtQQE.s:2003   .bss.err_novalidadd:00000000 err_novalidadd
+     /tmp/ccRCtQQE.s:2046   .bss.err_bogus_cmds_cmds:00000000 err_bogus_cmds_cmds
+     /tmp/ccRCtQQE.s:2059   .bss.err_bogus_cmds:00000000 err_bogus_cmds
+     /tmp/ccRCtQQE.s:2159   .bss.sw_padd:00000000 sw_padd
+     /tmp/ccRCtQQE.s:1992   .bss.can_msg_cmd:00000000 $d
+     /tmp/ccRCtQQE.s:1996   .bss.can_msg_cmd:00000000 can_msg_cmd
+     /tmp/ccRCtQQE.s:1999   .bss.err_novalidadd:00000000 $d
+     /tmp/ccRCtQQE.s:2006   .bss.can_msg_wr:00000000 $d
+     /tmp/ccRCtQQE.s:2010   .bss.can_msg_wr:00000000 can_msg_wr
+     /tmp/ccRCtQQE.s:2013   .data.flashblocksize:00000000 $d
+     /tmp/ccRCtQQE.s:2020   .rodata.table:00000000 $d
+     /tmp/ccRCtQQE.s:2042   .bss.err_bogus_cmds_cmds:00000000 $d
+     /tmp/ccRCtQQE.s:2049   .bss.can_msg_rd:00000000 $d
+     /tmp/ccRCtQQE.s:2053   .bss.can_msg_rd:00000000 can_msg_rd
+     /tmp/ccRCtQQE.s:2056   .bss.err_bogus_cmds:00000000 $d
+     /tmp/ccRCtQQE.s:2062   .rodata.str1.4:00000000 $d
+     /tmp/ccRCtQQE.s:2141   .bss.flblkbuff:00000000 $d
+     /tmp/ccRCtQQE.s:2145   .bss.flblkbuff:00000000 flblkbuff
+     /tmp/ccRCtQQE.s:2148   .bss.ldr_phase:00000000 $d
+     /tmp/ccRCtQQE.s:2155   .bss.sw_padd:00000000 $d
+     /tmp/ccRCtQQE.s:2162   .bss.debugPctr:00000000 $d
+     /tmp/ccRCtQQE.s:2166   .bss.debugPctr:00000000 debugPctr
+     /tmp/ccRCtQQE.s:2169   .bss.sw_flash1sttime:00000000 $d
+                     .debug_frame:00000010 $d
+     /tmp/ccRCtQQE.s:1783   .text.do_cmd_cmd:00000025 $d
+     /tmp/ccRCtQQE.s:1783   .text.do_cmd_cmd:00000026 $t
+
+UNDEFINED SYMBOLS
+can_driver_put
+pctl1
+printf
+flash_erase
+flash_write
+ARM GAS  /tmp/ccRCtQQE.s 			page 58
+
+
+rc_crc32
+__appoffset
+__appjump
+system_reset
+__highflashlayout
+can_driver_toss0
+can_driver_peek0
+can_driver_toss1
+can_driver_peek1

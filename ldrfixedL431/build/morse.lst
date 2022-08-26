@@ -1,0 +1,959 @@
+ARM GAS  /tmp/ccbk7hSb.s 			page 1
+
+
+   1              		.syntax unified
+   2              		.cpu cortex-m4
+   3              		.eabi_attribute 27, 1
+   4              		.eabi_attribute 28, 1
+   5              		.fpu fpv4-sp-d16
+   6              		.eabi_attribute 20, 1
+   7              		.eabi_attribute 21, 1
+   8              		.eabi_attribute 23, 3
+   9              		.eabi_attribute 24, 1
+  10              		.eabi_attribute 25, 1
+  11              		.eabi_attribute 26, 1
+  12              		.eabi_attribute 30, 1
+  13              		.eabi_attribute 34, 1
+  14              		.eabi_attribute 18, 4
+  15              		.thumb
+  16              		.syntax unified
+  17              		.file	"morse.c"
+  18              		.text
+  19              	.Ltext0:
+  20              		.cfi_sections	.debug_frame
+  21              		.section	.text.delay,"ax",%progbits
+  22              		.align	2
+  23              		.thumb
+  24              		.thumb_func
+  26              	delay:
+  27              	.LFB132:
+  28              		.file 1 "Ourwares/morse.c"
+   1:Ourwares/morse.c **** /******************************************************************************
+   2:Ourwares/morse.c **** * File Name          : morse.c
+   3:Ourwares/morse.c **** * Date First Issued  : 02/13/2019
+   4:Ourwares/morse.c **** * Description        : Morse code
+   5:Ourwares/morse.c **** *******************************************************************************/
+   6:Ourwares/morse.c **** #include <stdint.h>
+   7:Ourwares/morse.c **** #include "DTW_counter.h"
+   8:Ourwares/morse.c **** #include "stm32l4xx_hal.h"
+   9:Ourwares/morse.c **** #include "main.h"
+  10:Ourwares/morse.c **** 
+  11:Ourwares/morse.c **** #define TICPERSEC (16000000)
+  12:Ourwares/morse.c **** #define TIC_DIT (TICPERSEC/6)
+  13:Ourwares/morse.c **** #define TIC_DAH (TIC_DIT*4)
+  14:Ourwares/morse.c **** #define TIC_IDIT (TIC_DIT*1.3)
+  15:Ourwares/morse.c **** #define TIC_ICHAR (TIC_IDIT*4)
+  16:Ourwares/morse.c **** #define TIC_IWORD (TIC_ICHAR *3)
+  17:Ourwares/morse.c **** #define TIC_PAUSE (TICPERSEC*1) // Pause between code sequence
+  18:Ourwares/morse.c **** 
+  19:Ourwares/morse.c **** #define LEDALL (GPIO_PIN_0|GPIO_PIN_1)
+  20:Ourwares/morse.c **** 
+  21:Ourwares/morse.c **** struct MORSE_ELEMENT
+  22:Ourwares/morse.c **** {
+  23:Ourwares/morse.c **** 	char c;
+  24:Ourwares/morse.c **** 	uint8_t dd;
+  25:Ourwares/morse.c **** 	uint8_t ct;
+  26:Ourwares/morse.c **** };
+  27:Ourwares/morse.c **** 
+  28:Ourwares/morse.c **** const struct MORSE_ELEMENT mrse[] = {
+  29:Ourwares/morse.c **** {'A', 0b01000000, 2}, 
+  30:Ourwares/morse.c **** {'B', 0b10000000, 4}, 
+ARM GAS  /tmp/ccbk7hSb.s 			page 2
+
+
+  31:Ourwares/morse.c **** {'C', 0b10100000, 4}, 
+  32:Ourwares/morse.c **** {'D', 0b10000000, 3}, 
+  33:Ourwares/morse.c **** {'E', 0b00000000, 1}, 
+  34:Ourwares/morse.c **** {'F', 0b00100000, 4}, 
+  35:Ourwares/morse.c **** {'G', 0b11000000, 3}, 
+  36:Ourwares/morse.c **** {'H', 0b00000000, 4},
+  37:Ourwares/morse.c **** {'I', 0b00000000, 2}, 
+  38:Ourwares/morse.c **** {'J', 0b01110000, 4}, 
+  39:Ourwares/morse.c **** {'K', 0b10100000, 3}, 
+  40:Ourwares/morse.c **** {'L', 0b01000000, 4}, 
+  41:Ourwares/morse.c **** {'M', 0b11000000, 2}, 
+  42:Ourwares/morse.c **** {'N', 0b10000000, 2}, 
+  43:Ourwares/morse.c **** {'O', 0b11100000, 3}, 
+  44:Ourwares/morse.c **** {'P', 0b01100000, 4}, 
+  45:Ourwares/morse.c **** {'Q', 0b11010000, 4}, 
+  46:Ourwares/morse.c **** {'R', 0b01000000, 3}, 
+  47:Ourwares/morse.c **** {'S', 0b00000000, 3}, 
+  48:Ourwares/morse.c **** {'T', 0b10000000, 1}, 
+  49:Ourwares/morse.c **** {'U', 0b00100000, 3}, 
+  50:Ourwares/morse.c **** {'V', 0b00010000, 4}, 
+  51:Ourwares/morse.c **** {'W', 0b01100000, 3}, 
+  52:Ourwares/morse.c **** {'X', 0b10010000, 4}, 
+  53:Ourwares/morse.c **** {'Y', 0b10110000, 4}, 
+  54:Ourwares/morse.c **** {'Z', 0b11000000, 4}, 
+  55:Ourwares/morse.c **** {'0', 0b11111000, 5}, 
+  56:Ourwares/morse.c **** {'1', 0b01111000, 5}, 
+  57:Ourwares/morse.c **** {'2', 0b00111000, 5}, 
+  58:Ourwares/morse.c **** {'3', 0b00011000, 5}, 
+  59:Ourwares/morse.c **** {'4', 0b00001000, 5}, 
+  60:Ourwares/morse.c **** {'5', 0b00000000, 5}, 
+  61:Ourwares/morse.c **** {'6', 0b10000000, 5}, 
+  62:Ourwares/morse.c **** {'7', 0b11000000, 5}, 
+  63:Ourwares/morse.c **** {'8', 0b11100000, 5}, 
+  64:Ourwares/morse.c **** {'9', 0b11110000, 5}, 
+  65:Ourwares/morse.c **** {'.', 0b01010100, 6}, 
+  66:Ourwares/morse.c **** {',', 0b11001100, 6}, 
+  67:Ourwares/morse.c **** {'?', 0b00110000, 6}, 
+  68:Ourwares/morse.c **** {'-', 0b10001000, 5}, 
+  69:Ourwares/morse.c **** {'@', 0b01101000, 6}, 
+  70:Ourwares/morse.c **** {'_', 0b00110100, 6}, 
+  71:Ourwares/morse.c **** {'+', 0b01010000, 5}, 
+  72:Ourwares/morse.c **** {';', 0b10101000, 6}, 
+  73:Ourwares/morse.c **** {'&', 0b01000000, 5},
+  74:Ourwares/morse.c **** {'/', 0b10010000, 5},
+  75:Ourwares/morse.c **** {'(', 0b10110000, 5},
+  76:Ourwares/morse.c **** {')', 0b10110100, 6},
+  77:Ourwares/morse.c **** };
+  78:Ourwares/morse.c **** 
+  79:Ourwares/morse.c **** /* *************************************************************************
+  80:Ourwares/morse.c ****  * static void delay(uint32_t ticks, uint32_t pin, uint8_t on);
+  81:Ourwares/morse.c ****  * @brief	: Delay based on DTW counter with LEDs ON
+  82:Ourwares/morse.c ****  * @param	: ticks = DTW count to delay
+  83:Ourwares/morse.c ****  * @param	: pin = pin number, e.g. GPIO_PIN_0
+  84:Ourwares/morse.c ****  * @param	: on = GPIO_PIN_RESET or GPIO_PIN_SET
+  85:Ourwares/morse.c ****  * *************************************************************************/
+  86:Ourwares/morse.c **** static void delay(uint32_t ticks, uint32_t pin, uint8_t on)
+  87:Ourwares/morse.c **** {
+ARM GAS  /tmp/ccbk7hSb.s 			page 3
+
+
+  29              		.loc 1 87 0
+  30              		.cfi_startproc
+  31              		@ args = 0, pretend = 0, frame = 0
+  32              		@ frame_needed = 0, uses_anonymous_args = 0
+  33              	.LVL0:
+  34 0000 70B5     		push	{r4, r5, r6, lr}
+  35              	.LCFI0:
+  36              		.cfi_def_cfa_offset 16
+  37              		.cfi_offset 4, -16
+  38              		.cfi_offset 5, -12
+  39              		.cfi_offset 6, -8
+  40              		.cfi_offset 14, -4
+  41 0002 0E46     		mov	r6, r1
+  42 0004 1546     		mov	r5, r2
+  88:Ourwares/morse.c **** 	uint32_t tx = DTWTIME + ticks;
+  43              		.loc 1 88 0
+  44 0006 074B     		ldr	r3, .L5
+  45 0008 1C68     		ldr	r4, [r3]
+  46 000a 0444     		add	r4, r4, r0
+  47              	.LVL1:
+  89:Ourwares/morse.c **** 	while ((int32_t)(tx - DTWTIME) > 0)
+  48              		.loc 1 89 0
+  49 000c 04E0     		b	.L2
+  50              	.LVL2:
+  51              	.L3:
+  90:Ourwares/morse.c **** 	{
+  91:Ourwares/morse.c **** 			HAL_GPIO_WritePin(GPIOB, pin, on); 
+  52              		.loc 1 91 0
+  53 000e 2A46     		mov	r2, r5
+  54 0010 B1B2     		uxth	r1, r6
+  55 0012 0548     		ldr	r0, .L5+4
+  56 0014 FFF7FEFF 		bl	HAL_GPIO_WritePin
+  57              	.LVL3:
+  58              	.L2:
+  89:Ourwares/morse.c **** 	while ((int32_t)(tx - DTWTIME) > 0)
+  59              		.loc 1 89 0
+  60 0018 024B     		ldr	r3, .L5
+  61 001a 1B68     		ldr	r3, [r3]
+  62 001c E31A     		subs	r3, r4, r3
+  63 001e 002B     		cmp	r3, #0
+  64 0020 F5DC     		bgt	.L3
+  92:Ourwares/morse.c **** 	}
+  93:Ourwares/morse.c **** 	return;
+  94:Ourwares/morse.c **** }
+  65              		.loc 1 94 0
+  66 0022 70BD     		pop	{r4, r5, r6, pc}
+  67              	.LVL4:
+  68              	.L6:
+  69              		.align	2
+  70              	.L5:
+  71 0024 041000E0 		.word	-536866812
+  72 0028 00040048 		.word	1207960576
+  73              		.cfi_endproc
+  74              	.LFE132:
+  76              		.section	.text.morse_generate,"ax",%progbits
+  77              		.align	2
+  78              		.thumb
+ARM GAS  /tmp/ccbk7hSb.s 			page 4
+
+
+  79              		.thumb_func
+  81              	morse_generate:
+  82              	.LFB133:
+  95:Ourwares/morse.c **** 
+  96:Ourwares/morse.c **** /* *************************************************************************
+  97:Ourwares/morse.c ****  * static void morse_generate(char c, uint32_t pin);
+  98:Ourwares/morse.c ****  *	@brief	: c = character to send as Morse cdoe
+  99:Ourwares/morse.c ****  * @param	: pin = pin number, e.g. GPIO_PIN_0
+ 100:Ourwares/morse.c ****  * *************************************************************************/
+ 101:Ourwares/morse.c **** static void morse_generate(char c, uint32_t pin)
+ 102:Ourwares/morse.c **** {
+  83              		.loc 1 102 0
+  84              		.cfi_startproc
+  85              		@ args = 0, pretend = 0, frame = 0
+  86              		@ frame_needed = 0, uses_anonymous_args = 0
+  87              	.LVL5:
+  88 0000 70B5     		push	{r4, r5, r6, lr}
+  89              	.LCFI1:
+  90              		.cfi_def_cfa_offset 16
+  91              		.cfi_offset 4, -16
+  92              		.cfi_offset 5, -12
+  93              		.cfi_offset 6, -8
+  94              		.cfi_offset 14, -4
+  95              	.LVL6:
+ 103:Ourwares/morse.c **** 	const struct MORSE_ELEMENT* ptbl = mrse;
+ 104:Ourwares/morse.c **** 	int i;
+ 105:Ourwares/morse.c **** 	uint8_t ct;
+ 106:Ourwares/morse.c **** 	uint8_t dd;
+ 107:Ourwares/morse.c **** 	
+ 108:Ourwares/morse.c **** 	for (i = 0; i < (74 - 16); i++)
+  96              		.loc 1 108 0
+  97 0002 0022     		movs	r2, #0
+ 103:Ourwares/morse.c **** 	const struct MORSE_ELEMENT* ptbl = mrse;
+  98              		.loc 1 103 0
+  99 0004 164B     		ldr	r3, .L17
+ 100              		.loc 1 108 0
+ 101 0006 27E0     		b	.L8
+ 102              	.LVL7:
+ 103              	.L15:
+ 109:Ourwares/morse.c **** 	{
+ 110:Ourwares/morse.c **** 		if (ptbl->c == c)
+ 104              		.loc 1 110 0
+ 105 0008 1C78     		ldrb	r4, [r3]	@ zero_extendqisi2
+ 106 000a 8442     		cmp	r4, r0
+ 107 000c 22D1     		bne	.L9
+ 108 000e 0E46     		mov	r6, r1
+ 111:Ourwares/morse.c **** 		{
+ 112:Ourwares/morse.c **** 				ct = ptbl->ct;
+ 109              		.loc 1 112 0
+ 110 0010 9C78     		ldrb	r4, [r3, #2]	@ zero_extendqisi2
+ 111              	.LVL8:
+ 113:Ourwares/morse.c **** 				dd = ptbl->dd;	
+ 112              		.loc 1 113 0
+ 113 0012 5D78     		ldrb	r5, [r3, #1]	@ zero_extendqisi2
+ 114              	.LVL9:
+ 114:Ourwares/morse.c **** 				while (ct > 0)
+ 115              		.loc 1 114 0
+ARM GAS  /tmp/ccbk7hSb.s 			page 5
+
+
+ 116 0014 16E0     		b	.L10
+ 117              	.LVL10:
+ 118              	.L13:
+ 115:Ourwares/morse.c **** 				{
+ 116:Ourwares/morse.c **** 					if ((dd & 0x80) == 0)
+ 119              		.loc 1 116 0
+ 120 0016 15F0800F 		tst	r5, #128
+ 121 001a 05D1     		bne	.L11
+ 117:Ourwares/morse.c **** 					{ // Here, dot
+ 118:Ourwares/morse.c **** 						delay(TIC_DIT, pin, GPIO_PIN_RESET);
+ 122              		.loc 1 118 0
+ 123 001c 0022     		movs	r2, #0
+ 124 001e 3146     		mov	r1, r6
+ 125 0020 1048     		ldr	r0, .L17+4
+ 126 0022 FFF7FEFF 		bl	delay
+ 127              	.LVL11:
+ 128 0026 04E0     		b	.L12
+ 129              	.L11:
+ 119:Ourwares/morse.c **** 					}
+ 120:Ourwares/morse.c **** 					else
+ 121:Ourwares/morse.c **** 					{ // Here, dash
+ 122:Ourwares/morse.c **** 						delay(TIC_DAH, pin, GPIO_PIN_RESET);						
+ 130              		.loc 1 122 0
+ 131 0028 0022     		movs	r2, #0
+ 132 002a 3146     		mov	r1, r6
+ 133 002c 0E48     		ldr	r0, .L17+8
+ 134 002e FFF7FEFF 		bl	delay
+ 135              	.LVL12:
+ 136              	.L12:
+ 123:Ourwares/morse.c **** 					}
+ 124:Ourwares/morse.c **** 					delay(TIC_IDIT, pin, GPIO_PIN_SET);
+ 137              		.loc 1 124 0
+ 138 0032 0122     		movs	r2, #1
+ 139 0034 3146     		mov	r1, r6
+ 140 0036 0D48     		ldr	r0, .L17+12
+ 141 0038 FFF7FEFF 		bl	delay
+ 142              	.LVL13:
+ 125:Ourwares/morse.c **** 					dd = dd << 1;
+ 143              		.loc 1 125 0
+ 144 003c 6D00     		lsls	r5, r5, #1
+ 145              	.LVL14:
+ 146 003e EDB2     		uxtb	r5, r5
+ 147              	.LVL15:
+ 126:Ourwares/morse.c **** 					ct -= 1;
+ 148              		.loc 1 126 0
+ 149 0040 013C     		subs	r4, r4, #1
+ 150              	.LVL16:
+ 151 0042 E4B2     		uxtb	r4, r4
+ 152              	.LVL17:
+ 153              	.L10:
+ 114:Ourwares/morse.c **** 				{
+ 154              		.loc 1 114 0
+ 155 0044 002C     		cmp	r4, #0
+ 156 0046 E6D1     		bne	.L13
+ 127:Ourwares/morse.c **** 				}
+ 128:Ourwares/morse.c **** 				delay(TIC_ICHAR, pin, GPIO_PIN_SET);
+ 157              		.loc 1 128 0
+ARM GAS  /tmp/ccbk7hSb.s 			page 6
+
+
+ 158 0048 0122     		movs	r2, #1
+ 159 004a 3146     		mov	r1, r6
+ 160 004c 0848     		ldr	r0, .L17+16
+ 161 004e FFF7FEFF 		bl	delay
+ 162              	.LVL18:
+ 129:Ourwares/morse.c **** 				return;
+ 163              		.loc 1 129 0
+ 164 0052 70BD     		pop	{r4, r5, r6, pc}
+ 165              	.LVL19:
+ 166              	.L9:
+ 130:Ourwares/morse.c **** 		}
+ 131:Ourwares/morse.c **** 		ptbl++;
+ 167              		.loc 1 131 0 discriminator 2
+ 168 0054 0333     		adds	r3, r3, #3
+ 169              	.LVL20:
+ 108:Ourwares/morse.c **** 	{
+ 170              		.loc 1 108 0 discriminator 2
+ 171 0056 0132     		adds	r2, r2, #1
+ 172              	.LVL21:
+ 173              	.L8:
+ 108:Ourwares/morse.c **** 	{
+ 174              		.loc 1 108 0 is_stmt 0 discriminator 1
+ 175 0058 392A     		cmp	r2, #57
+ 176 005a D5DD     		ble	.L15
+ 177 005c 70BD     		pop	{r4, r5, r6, pc}
+ 178              	.L18:
+ 179 005e 00BF     		.align	2
+ 180              	.L17:
+ 181 0060 00000000 		.word	.LANCHOR0
+ 182 0064 AAB02800 		.word	2666666
+ 183 0068 A8C2A200 		.word	10666664
+ 184 006c A9E53400 		.word	3466665
+ 185 0070 A796D300 		.word	13866663
+ 186              		.cfi_endproc
+ 187              	.LFE133:
+ 189              		.section	.text.morse_string,"ax",%progbits
+ 190              		.align	2
+ 191              		.global	morse_string
+ 192              		.thumb
+ 193              		.thumb_func
+ 195              	morse_string:
+ 196              	.LFB134:
+ 132:Ourwares/morse.c **** 	}	
+ 133:Ourwares/morse.c **** 	return;
+ 134:Ourwares/morse.c **** }
+ 135:Ourwares/morse.c **** /* *************************************************************************
+ 136:Ourwares/morse.c ****  * void morse_string(char* p, uint32_t pin);
+ 137:Ourwares/morse.c ****  *	@brief	: Send a character string as Morse code
+ 138:Ourwares/morse.c ****  * @param	: p = pointer to string
+ 139:Ourwares/morse.c ****  * @param	: pin = pin number, e.g. GPIO_PIN_0
+ 140:Ourwares/morse.c ****  * *************************************************************************/
+ 141:Ourwares/morse.c **** void morse_string(char* p, uint32_t pin)
+ 142:Ourwares/morse.c **** {
+ 197              		.loc 1 142 0 is_stmt 1
+ 198              		.cfi_startproc
+ 199              		@ args = 0, pretend = 0, frame = 0
+ 200              		@ frame_needed = 0, uses_anonymous_args = 0
+ARM GAS  /tmp/ccbk7hSb.s 			page 7
+
+
+ 201              	.LVL22:
+ 202 0000 38B5     		push	{r3, r4, r5, lr}
+ 203              	.LCFI2:
+ 204              		.cfi_def_cfa_offset 16
+ 205              		.cfi_offset 3, -16
+ 206              		.cfi_offset 4, -12
+ 207              		.cfi_offset 5, -8
+ 208              		.cfi_offset 14, -4
+ 209 0002 0446     		mov	r4, r0
+ 210 0004 0D46     		mov	r5, r1
+ 143:Ourwares/morse.c **** 	while(*p != 0)
+ 211              		.loc 1 143 0
+ 212 0006 0CE0     		b	.L20
+ 213              	.LVL23:
+ 214              	.L23:
+ 144:Ourwares/morse.c **** 	{
+ 145:Ourwares/morse.c **** 		if (*p != ' ')
+ 215              		.loc 1 145 0
+ 216 0008 2028     		cmp	r0, #32
+ 217 000a 04D0     		beq	.L21
+ 146:Ourwares/morse.c **** 		{
+ 147:Ourwares/morse.c **** 			morse_generate(*p++, pin);
+ 218              		.loc 1 147 0
+ 219 000c 0134     		adds	r4, r4, #1
+ 220              	.LVL24:
+ 221 000e 2946     		mov	r1, r5
+ 222 0010 FFF7FEFF 		bl	morse_generate
+ 223              	.LVL25:
+ 224 0014 05E0     		b	.L20
+ 225              	.L21:
+ 148:Ourwares/morse.c **** 		}
+ 149:Ourwares/morse.c **** 		else
+ 150:Ourwares/morse.c **** 		{
+ 151:Ourwares/morse.c **** 			delay(TIC_IWORD, pin,GPIO_PIN_SET);
+ 226              		.loc 1 151 0
+ 227 0016 0122     		movs	r2, #1
+ 228 0018 2946     		mov	r1, r5
+ 229 001a 0448     		ldr	r0, .L25
+ 230 001c FFF7FEFF 		bl	delay
+ 231              	.LVL26:
+ 152:Ourwares/morse.c **** 			p++;
+ 232              		.loc 1 152 0
+ 233 0020 0134     		adds	r4, r4, #1
+ 234              	.LVL27:
+ 235              	.L20:
+ 143:Ourwares/morse.c **** 	{
+ 236              		.loc 1 143 0
+ 237 0022 2078     		ldrb	r0, [r4]	@ zero_extendqisi2
+ 238 0024 0028     		cmp	r0, #0
+ 239 0026 EFD1     		bne	.L23
+ 153:Ourwares/morse.c **** 		}
+ 154:Ourwares/morse.c **** 	}
+ 155:Ourwares/morse.c **** 
+ 156:Ourwares/morse.c **** 	return;		
+ 157:Ourwares/morse.c **** }
+ 240              		.loc 1 157 0
+ 241 0028 38BD     		pop	{r3, r4, r5, pc}
+ARM GAS  /tmp/ccbk7hSb.s 			page 8
+
+
+ 242              	.LVL28:
+ 243              	.L26:
+ 244 002a 00BF     		.align	2
+ 245              	.L25:
+ 246 002c F5C37A02 		.word	41599989
+ 247              		.cfi_endproc
+ 248              	.LFE134:
+ 250              		.section	.text.morse_number,"ax",%progbits
+ 251              		.align	2
+ 252              		.global	morse_number
+ 253              		.thumb
+ 254              		.thumb_func
+ 256              	morse_number:
+ 257              	.LFB135:
+ 158:Ourwares/morse.c **** /* *************************************************************************
+ 159:Ourwares/morse.c ****  * void morse_number(uint32_t nx, uint32_t pin);
+ 160:Ourwares/morse.c ****  *	@brief	: Send a character string as Morse code
+ 161:Ourwares/morse.c ****  * @param	: nx = number to send
+ 162:Ourwares/morse.c ****  * @param	: pin = pin number, e.g. GPIO_PIN_0
+ 163:Ourwares/morse.c ****  * *************************************************************************/
+ 164:Ourwares/morse.c **** void morse_number(uint32_t nx, uint32_t pin)
+ 165:Ourwares/morse.c **** {
+ 258              		.loc 1 165 0
+ 259              		.cfi_startproc
+ 260              		@ args = 0, pretend = 0, frame = 16
+ 261              		@ frame_needed = 0, uses_anonymous_args = 0
+ 262              	.LVL29:
+ 263 0000 30B5     		push	{r4, r5, lr}
+ 264              	.LCFI3:
+ 265              		.cfi_def_cfa_offset 12
+ 266              		.cfi_offset 4, -12
+ 267              		.cfi_offset 5, -8
+ 268              		.cfi_offset 14, -4
+ 269 0002 85B0     		sub	sp, sp, #20
+ 270              	.LCFI4:
+ 271              		.cfi_def_cfa_offset 32
+ 272 0004 0D46     		mov	r5, r1
+ 273              	.LVL30:
+ 166:Ourwares/morse.c **** 	char c[16];
+ 167:Ourwares/morse.c **** 	int i = 0;
+ 274              		.loc 1 167 0
+ 275 0006 0024     		movs	r4, #0
+ 276              	.LVL31:
+ 277              	.L28:
+ 168:Ourwares/morse.c **** 	do
+ 169:Ourwares/morse.c **** 	{
+ 170:Ourwares/morse.c **** 		c[i] = (nx % 10) + '0';
+ 278              		.loc 1 170 0 discriminator 1
+ 279 0008 114B     		ldr	r3, .L32
+ 280 000a A3FB0023 		umull	r2, r3, r3, r0
+ 281 000e DB08     		lsrs	r3, r3, #3
+ 282 0010 1A46     		mov	r2, r3
+ 283 0012 03EB8303 		add	r3, r3, r3, lsl #2
+ 284 0016 5900     		lsls	r1, r3, #1
+ 285 0018 431A     		subs	r3, r0, r1
+ 286 001a 04A9     		add	r1, sp, #16
+ 287 001c 2144     		add	r1, r1, r4
+ARM GAS  /tmp/ccbk7hSb.s 			page 9
+
+
+ 288 001e 3033     		adds	r3, r3, #48
+ 289 0020 01F8103C 		strb	r3, [r1, #-16]
+ 171:Ourwares/morse.c **** 		nx = nx/10;
+ 290              		.loc 1 171 0 discriminator 1
+ 291 0024 1046     		mov	r0, r2
+ 292              	.LVL32:
+ 172:Ourwares/morse.c **** 		i += 1;
+ 293              		.loc 1 172 0 discriminator 1
+ 294 0026 0134     		adds	r4, r4, #1
+ 295              	.LVL33:
+ 173:Ourwares/morse.c **** 	} while (nx != 0);
+ 296              		.loc 1 173 0 discriminator 1
+ 297 0028 002A     		cmp	r2, #0
+ 298 002a EDD1     		bne	.L28
+ 299 002c 06E0     		b	.L29
+ 300              	.LVL34:
+ 301              	.L30:
+ 174:Ourwares/morse.c **** 
+ 175:Ourwares/morse.c **** 	while (--i >= 0)
+ 176:Ourwares/morse.c **** 	{
+ 177:Ourwares/morse.c **** 		morse_generate(c[i], pin);
+ 302              		.loc 1 177 0
+ 303 002e 2946     		mov	r1, r5
+ 304 0030 04AB     		add	r3, sp, #16
+ 305 0032 2344     		add	r3, r3, r4
+ 306 0034 13F8100C 		ldrb	r0, [r3, #-16]	@ zero_extendqisi2
+ 307 0038 FFF7FEFF 		bl	morse_generate
+ 308              	.LVL35:
+ 309              	.L29:
+ 175:Ourwares/morse.c **** 	{
+ 310              		.loc 1 175 0
+ 311 003c 013C     		subs	r4, r4, #1
+ 312              	.LVL36:
+ 313 003e F6D5     		bpl	.L30
+ 178:Ourwares/morse.c **** 
+ 179:Ourwares/morse.c **** 	}
+ 180:Ourwares/morse.c **** 	delay(TIC_IWORD, pin, GPIO_PIN_SET);
+ 314              		.loc 1 180 0
+ 315 0040 0122     		movs	r2, #1
+ 316 0042 2946     		mov	r1, r5
+ 317 0044 0348     		ldr	r0, .L32+4
+ 318 0046 FFF7FEFF 		bl	delay
+ 319              	.LVL37:
+ 181:Ourwares/morse.c **** 	return;
+ 182:Ourwares/morse.c **** }
+ 320              		.loc 1 182 0
+ 321 004a 05B0     		add	sp, sp, #20
+ 322              	.LCFI5:
+ 323              		.cfi_def_cfa_offset 12
+ 324              		@ sp needed
+ 325 004c 30BD     		pop	{r4, r5, pc}
+ 326              	.LVL38:
+ 327              	.L33:
+ 328 004e 00BF     		.align	2
+ 329              	.L32:
+ 330 0050 CDCCCCCC 		.word	-858993459
+ 331 0054 F5C37A02 		.word	41599989
+ARM GAS  /tmp/ccbk7hSb.s 			page 10
+
+
+ 332              		.cfi_endproc
+ 333              	.LFE135:
+ 335              		.section	.text.morse_trap,"ax",%progbits
+ 336              		.align	2
+ 337              		.global	morse_trap
+ 338              		.thumb
+ 339              		.thumb_func
+ 341              	morse_trap:
+ 342              	.LFB136:
+ 183:Ourwares/morse.c **** /* *************************************************************************
+ 184:Ourwares/morse.c ****  * void morse_trap(uint32_t x);
+ 185:Ourwares/morse.c ****  *	@brief	: Disable interrupts, Send 'x' and endless loop
+ 186:Ourwares/morse.c ****  * @param	: x = trap number to flash
+ 187:Ourwares/morse.c ****  * *************************************************************************/
+ 188:Ourwares/morse.c **** void morse_trap(uint32_t x)
+ 189:Ourwares/morse.c **** {
+ 343              		.loc 1 189 0
+ 344              		.cfi_startproc
+ 345              		@ Volatile: function does not return.
+ 346              		@ args = 0, pretend = 0, frame = 0
+ 347              		@ frame_needed = 0, uses_anonymous_args = 0
+ 348              	.LVL39:
+ 349 0000 08B5     		push	{r3, lr}
+ 350              	.LCFI6:
+ 351              		.cfi_def_cfa_offset 8
+ 352              		.cfi_offset 3, -8
+ 353              		.cfi_offset 14, -4
+ 354 0002 0446     		mov	r4, r0
+ 190:Ourwares/morse.c **** 	/* Disable global interrupts */
+ 191:Ourwares/morse.c **** __asm__ volatile ("CPSID I");
+ 355              		.loc 1 191 0
+ 356              		.syntax unified
+ 357              	@ 191 "Ourwares/morse.c" 1
+ 358 0004 72B6     		CPSID I
+ 359              	@ 0 "" 2
+ 360              	.LVL40:
+ 361              		.thumb
+ 362              		.syntax unified
+ 363              	.L35:
+ 192:Ourwares/morse.c **** 	while(1==1)
+ 193:Ourwares/morse.c **** 	{
+ 194:Ourwares/morse.c **** 		morse_number(x, (GPIO_PIN_0|GPIO_PIN_1));
+ 364              		.loc 1 194 0 discriminator 1
+ 365 0006 0321     		movs	r1, #3
+ 366 0008 2046     		mov	r0, r4
+ 367 000a FFF7FEFF 		bl	morse_number
+ 368              	.LVL41:
+ 195:Ourwares/morse.c **** 		delay(TIC_PAUSE, (GPIO_PIN_0|GPIO_PIN_1), GPIO_PIN_SET);	
+ 369              		.loc 1 195 0 discriminator 1
+ 370 000e 0122     		movs	r2, #1
+ 371 0010 0321     		movs	r1, #3
+ 372 0012 0248     		ldr	r0, .L37
+ 373 0014 FFF7FEFF 		bl	delay
+ 374              	.LVL42:
+ 375 0018 F5E7     		b	.L35
+ 376              	.L38:
+ 377 001a 00BF     		.align	2
+ARM GAS  /tmp/ccbk7hSb.s 			page 11
+
+
+ 378              	.L37:
+ 379 001c 0024F400 		.word	16000000
+ 380              		.cfi_endproc
+ 381              	.LFE136:
+ 383              		.section	.text.morse_hex,"ax",%progbits
+ 384              		.align	2
+ 385              		.global	morse_hex
+ 386              		.thumb
+ 387              		.thumb_func
+ 389              	morse_hex:
+ 390              	.LFB137:
+ 196:Ourwares/morse.c **** 	}
+ 197:Ourwares/morse.c **** }
+ 198:Ourwares/morse.c **** /* *************************************************************************
+ 199:Ourwares/morse.c ****  * void morse_hex(uint32_t n, uint32_t pin);
+ 200:Ourwares/morse.c ****  *	@brief	: Send a  hex number, skip leading zeroes
+ 201:Ourwares/morse.c ****  * @param	: nx = number to send
+ 202:Ourwares/morse.c ****  * @param	: pin = pin number, e.g. GPIO_PIN_0
+ 203:Ourwares/morse.c ****  * *************************************************************************/
+ 204:Ourwares/morse.c **** static const char h[16] = {'0','1','2','3','4','5','6','7','8','9','A','B','C','D','E','F'};
+ 205:Ourwares/morse.c **** void morse_hex(uint32_t nx, uint32_t pin)
+ 206:Ourwares/morse.c **** {
+ 391              		.loc 1 206 0
+ 392              		.cfi_startproc
+ 393              		@ args = 0, pretend = 0, frame = 0
+ 394              		@ frame_needed = 0, uses_anonymous_args = 0
+ 395              	.LVL43:
+ 396 0000 70B5     		push	{r4, r5, r6, lr}
+ 397              	.LCFI7:
+ 398              		.cfi_def_cfa_offset 16
+ 399              		.cfi_offset 4, -16
+ 400              		.cfi_offset 5, -12
+ 401              		.cfi_offset 6, -8
+ 402              		.cfi_offset 14, -4
+ 403 0002 0546     		mov	r5, r0
+ 404 0004 0E46     		mov	r6, r1
+ 405              	.LVL44:
+ 207:Ourwares/morse.c **** 	uint8_t c;
+ 208:Ourwares/morse.c **** 	uint8_t sw = 0;
+ 209:Ourwares/morse.c **** 	int8_t i;
+ 210:Ourwares/morse.c **** 
+ 211:Ourwares/morse.c **** 	morse_generate('X', pin);	// Hex prefix (but skip '0' in front of X)
+ 406              		.loc 1 211 0
+ 407 0006 5820     		movs	r0, #88
+ 408              	.LVL45:
+ 409 0008 FFF7FEFF 		bl	morse_generate
+ 410              	.LVL46:
+ 212:Ourwares/morse.c **** 
+ 213:Ourwares/morse.c **** 	uint32_t mask = 0xf0000000;
+ 214:Ourwares/morse.c **** 
+ 215:Ourwares/morse.c **** 	if (nx == 0)
+ 411              		.loc 1 215 0
+ 412 000c 9DB9     		cbnz	r5, .L45
+ 216:Ourwares/morse.c **** 	{
+ 217:Ourwares/morse.c **** 		morse_generate('0', pin);
+ 413              		.loc 1 217 0
+ 414 000e 3146     		mov	r1, r6
+ARM GAS  /tmp/ccbk7hSb.s 			page 12
+
+
+ 415 0010 3020     		movs	r0, #48
+ 416 0012 FFF7FEFF 		bl	morse_generate
+ 417              	.LVL47:
+ 218:Ourwares/morse.c **** 		return;
+ 418              		.loc 1 218 0
+ 419 0016 70BD     		pop	{r4, r5, r6, pc}
+ 420              	.LVL48:
+ 421              	.L44:
+ 219:Ourwares/morse.c **** 	}
+ 220:Ourwares/morse.c **** 	
+ 221:Ourwares/morse.c **** 	for (i = 0; i < 8; i++)
+ 222:Ourwares/morse.c **** 	{
+ 223:Ourwares/morse.c **** 		if (((nx & mask) != 0) || (sw != 0))
+ 422              		.loc 1 223 0
+ 423 0018 15F0704F 		tst	r5, #-268435456
+ 424 001c 00D1     		bne	.L42
+ 425              		.loc 1 223 0 is_stmt 0 discriminator 1
+ 426 001e 33B1     		cbz	r3, .L43
+ 427              	.L42:
+ 428              	.LVL49:
+ 224:Ourwares/morse.c **** 		{
+ 225:Ourwares/morse.c **** 			sw = 1;
+ 226:Ourwares/morse.c **** 			c = h[(nx >> 28)];
+ 429              		.loc 1 226 0 is_stmt 1
+ 430 0020 2B0F     		lsrs	r3, r5, #28
+ 227:Ourwares/morse.c **** 			morse_generate(c, pin);
+ 431              		.loc 1 227 0
+ 432 0022 3146     		mov	r1, r6
+ 433 0024 094A     		ldr	r2, .L47
+ 434 0026 D05C     		ldrb	r0, [r2, r3]	@ zero_extendqisi2
+ 435 0028 FFF7FEFF 		bl	morse_generate
+ 436              	.LVL50:
+ 225:Ourwares/morse.c **** 			c = h[(nx >> 28)];
+ 437              		.loc 1 225 0
+ 438 002c 0123     		movs	r3, #1
+ 439              	.LVL51:
+ 440              	.L43:
+ 228:Ourwares/morse.c **** 		}
+ 229:Ourwares/morse.c **** 		nx = nx << 4;
+ 441              		.loc 1 229 0 discriminator 2
+ 442 002e 2D01     		lsls	r5, r5, #4
+ 443              	.LVL52:
+ 221:Ourwares/morse.c **** 	{
+ 444              		.loc 1 221 0 discriminator 2
+ 445 0030 0134     		adds	r4, r4, #1
+ 446              	.LVL53:
+ 447 0032 64B2     		sxtb	r4, r4
+ 448              	.LVL54:
+ 449 0034 01E0     		b	.L40
+ 450              	.LVL55:
+ 451              	.L45:
+ 452 0036 0024     		movs	r4, #0
+ 453 0038 2346     		mov	r3, r4
+ 454              	.LVL56:
+ 455              	.L40:
+ 221:Ourwares/morse.c **** 	{
+ 456              		.loc 1 221 0 is_stmt 0 discriminator 1
+ARM GAS  /tmp/ccbk7hSb.s 			page 13
+
+
+ 457 003a 072C     		cmp	r4, #7
+ 458 003c ECDD     		ble	.L44
+ 230:Ourwares/morse.c **** 	}  
+ 231:Ourwares/morse.c **** 	delay(TIC_IWORD, pin, GPIO_PIN_SET);
+ 459              		.loc 1 231 0 is_stmt 1
+ 460 003e 0122     		movs	r2, #1
+ 461 0040 3146     		mov	r1, r6
+ 462 0042 0348     		ldr	r0, .L47+4
+ 463 0044 FFF7FEFF 		bl	delay
+ 464              	.LVL57:
+ 465 0048 70BD     		pop	{r4, r5, r6, pc}
+ 466              	.LVL58:
+ 467              	.L48:
+ 468 004a 00BF     		.align	2
+ 469              	.L47:
+ 470 004c 00000000 		.word	.LANCHOR1
+ 471 0050 F5C37A02 		.word	41599989
+ 472              		.cfi_endproc
+ 473              	.LFE137:
+ 475              		.global	mrse
+ 476              		.section	.rodata.mrse,"a",%progbits
+ 477              		.align	2
+ 478              		.set	.LANCHOR0,. + 0
+ 481              	mrse:
+ 482 0000 41       		.byte	65
+ 483 0001 40       		.byte	64
+ 484 0002 02       		.byte	2
+ 485 0003 42       		.byte	66
+ 486 0004 80       		.byte	-128
+ 487 0005 04       		.byte	4
+ 488 0006 43       		.byte	67
+ 489 0007 A0       		.byte	-96
+ 490 0008 04       		.byte	4
+ 491 0009 44       		.byte	68
+ 492 000a 80       		.byte	-128
+ 493 000b 03       		.byte	3
+ 494 000c 45       		.byte	69
+ 495 000d 00       		.byte	0
+ 496 000e 01       		.byte	1
+ 497 000f 46       		.byte	70
+ 498 0010 20       		.byte	32
+ 499 0011 04       		.byte	4
+ 500 0012 47       		.byte	71
+ 501 0013 C0       		.byte	-64
+ 502 0014 03       		.byte	3
+ 503 0015 48       		.byte	72
+ 504 0016 00       		.byte	0
+ 505 0017 04       		.byte	4
+ 506 0018 49       		.byte	73
+ 507 0019 00       		.byte	0
+ 508 001a 02       		.byte	2
+ 509 001b 4A       		.byte	74
+ 510 001c 70       		.byte	112
+ 511 001d 04       		.byte	4
+ 512 001e 4B       		.byte	75
+ 513 001f A0       		.byte	-96
+ 514 0020 03       		.byte	3
+ARM GAS  /tmp/ccbk7hSb.s 			page 14
+
+
+ 515 0021 4C       		.byte	76
+ 516 0022 40       		.byte	64
+ 517 0023 04       		.byte	4
+ 518 0024 4D       		.byte	77
+ 519 0025 C0       		.byte	-64
+ 520 0026 02       		.byte	2
+ 521 0027 4E       		.byte	78
+ 522 0028 80       		.byte	-128
+ 523 0029 02       		.byte	2
+ 524 002a 4F       		.byte	79
+ 525 002b E0       		.byte	-32
+ 526 002c 03       		.byte	3
+ 527 002d 50       		.byte	80
+ 528 002e 60       		.byte	96
+ 529 002f 04       		.byte	4
+ 530 0030 51       		.byte	81
+ 531 0031 D0       		.byte	-48
+ 532 0032 04       		.byte	4
+ 533 0033 52       		.byte	82
+ 534 0034 40       		.byte	64
+ 535 0035 03       		.byte	3
+ 536 0036 53       		.byte	83
+ 537 0037 00       		.byte	0
+ 538 0038 03       		.byte	3
+ 539 0039 54       		.byte	84
+ 540 003a 80       		.byte	-128
+ 541 003b 01       		.byte	1
+ 542 003c 55       		.byte	85
+ 543 003d 20       		.byte	32
+ 544 003e 03       		.byte	3
+ 545 003f 56       		.byte	86
+ 546 0040 10       		.byte	16
+ 547 0041 04       		.byte	4
+ 548 0042 57       		.byte	87
+ 549 0043 60       		.byte	96
+ 550 0044 03       		.byte	3
+ 551 0045 58       		.byte	88
+ 552 0046 90       		.byte	-112
+ 553 0047 04       		.byte	4
+ 554 0048 59       		.byte	89
+ 555 0049 B0       		.byte	-80
+ 556 004a 04       		.byte	4
+ 557 004b 5A       		.byte	90
+ 558 004c C0       		.byte	-64
+ 559 004d 04       		.byte	4
+ 560 004e 30       		.byte	48
+ 561 004f F8       		.byte	-8
+ 562 0050 05       		.byte	5
+ 563 0051 31       		.byte	49
+ 564 0052 78       		.byte	120
+ 565 0053 05       		.byte	5
+ 566 0054 32       		.byte	50
+ 567 0055 38       		.byte	56
+ 568 0056 05       		.byte	5
+ 569 0057 33       		.byte	51
+ 570 0058 18       		.byte	24
+ 571 0059 05       		.byte	5
+ARM GAS  /tmp/ccbk7hSb.s 			page 15
+
+
+ 572 005a 34       		.byte	52
+ 573 005b 08       		.byte	8
+ 574 005c 05       		.byte	5
+ 575 005d 35       		.byte	53
+ 576 005e 00       		.byte	0
+ 577 005f 05       		.byte	5
+ 578 0060 36       		.byte	54
+ 579 0061 80       		.byte	-128
+ 580 0062 05       		.byte	5
+ 581 0063 37       		.byte	55
+ 582 0064 C0       		.byte	-64
+ 583 0065 05       		.byte	5
+ 584 0066 38       		.byte	56
+ 585 0067 E0       		.byte	-32
+ 586 0068 05       		.byte	5
+ 587 0069 39       		.byte	57
+ 588 006a F0       		.byte	-16
+ 589 006b 05       		.byte	5
+ 590 006c 2E       		.byte	46
+ 591 006d 54       		.byte	84
+ 592 006e 06       		.byte	6
+ 593 006f 2C       		.byte	44
+ 594 0070 CC       		.byte	-52
+ 595 0071 06       		.byte	6
+ 596 0072 3F       		.byte	63
+ 597 0073 30       		.byte	48
+ 598 0074 06       		.byte	6
+ 599 0075 2D       		.byte	45
+ 600 0076 88       		.byte	-120
+ 601 0077 05       		.byte	5
+ 602 0078 40       		.byte	64
+ 603 0079 68       		.byte	104
+ 604 007a 06       		.byte	6
+ 605 007b 5F       		.byte	95
+ 606 007c 34       		.byte	52
+ 607 007d 06       		.byte	6
+ 608 007e 2B       		.byte	43
+ 609 007f 50       		.byte	80
+ 610 0080 05       		.byte	5
+ 611 0081 3B       		.byte	59
+ 612 0082 A8       		.byte	-88
+ 613 0083 06       		.byte	6
+ 614 0084 26       		.byte	38
+ 615 0085 40       		.byte	64
+ 616 0086 05       		.byte	5
+ 617 0087 2F       		.byte	47
+ 618 0088 90       		.byte	-112
+ 619 0089 05       		.byte	5
+ 620 008a 28       		.byte	40
+ 621 008b B0       		.byte	-80
+ 622 008c 05       		.byte	5
+ 623 008d 29       		.byte	41
+ 624 008e B4       		.byte	-76
+ 625 008f 06       		.byte	6
+ 626              		.section	.rodata.h,"a",%progbits
+ 627              		.align	2
+ 628              		.set	.LANCHOR1,. + 0
+ARM GAS  /tmp/ccbk7hSb.s 			page 16
+
+
+ 631              	h:
+ 632 0000 30       		.byte	48
+ 633 0001 31       		.byte	49
+ 634 0002 32       		.byte	50
+ 635 0003 33       		.byte	51
+ 636 0004 34       		.byte	52
+ 637 0005 35       		.byte	53
+ 638 0006 36       		.byte	54
+ 639 0007 37       		.byte	55
+ 640 0008 38       		.byte	56
+ 641 0009 39       		.byte	57
+ 642 000a 41       		.byte	65
+ 643 000b 42       		.byte	66
+ 644 000c 43       		.byte	67
+ 645 000d 44       		.byte	68
+ 646 000e 45       		.byte	69
+ 647 000f 46       		.byte	70
+ 648              		.text
+ 649              	.Letext0:
+ 650              		.file 2 "/home/deh/launchpad/gcc-arm-none-eabi-5_4-2016q3/arm-none-eabi/include/machine/_default_t
+ 651              		.file 3 "/home/deh/launchpad/gcc-arm-none-eabi-5_4-2016q3/arm-none-eabi/include/sys/_stdint.h"
+ 652              		.file 4 "Drivers/CMSIS/Device/ST/STM32L4xx/Include/stm32l431xx.h"
+ 653              		.file 5 "Drivers/CMSIS/Include/cmsis_gcc.h"
+ 654              		.file 6 "Drivers/CMSIS/Include/core_cm4.h"
+ 655              		.file 7 "Drivers/STM32L4xx_HAL_Driver/Inc/stm32l4xx_hal_gpio.h"
+ARM GAS  /tmp/ccbk7hSb.s 			page 17
+
+
+DEFINED SYMBOLS
+                            *ABS*:00000000 morse.c
+     /tmp/ccbk7hSb.s:22     .text.delay:00000000 $t
+     /tmp/ccbk7hSb.s:26     .text.delay:00000000 delay
+     /tmp/ccbk7hSb.s:71     .text.delay:00000024 $d
+     /tmp/ccbk7hSb.s:77     .text.morse_generate:00000000 $t
+     /tmp/ccbk7hSb.s:81     .text.morse_generate:00000000 morse_generate
+     /tmp/ccbk7hSb.s:181    .text.morse_generate:00000060 $d
+     /tmp/ccbk7hSb.s:190    .text.morse_string:00000000 $t
+     /tmp/ccbk7hSb.s:195    .text.morse_string:00000000 morse_string
+     /tmp/ccbk7hSb.s:246    .text.morse_string:0000002c $d
+     /tmp/ccbk7hSb.s:251    .text.morse_number:00000000 $t
+     /tmp/ccbk7hSb.s:256    .text.morse_number:00000000 morse_number
+     /tmp/ccbk7hSb.s:330    .text.morse_number:00000050 $d
+     /tmp/ccbk7hSb.s:336    .text.morse_trap:00000000 $t
+     /tmp/ccbk7hSb.s:341    .text.morse_trap:00000000 morse_trap
+     /tmp/ccbk7hSb.s:379    .text.morse_trap:0000001c $d
+     /tmp/ccbk7hSb.s:384    .text.morse_hex:00000000 $t
+     /tmp/ccbk7hSb.s:389    .text.morse_hex:00000000 morse_hex
+     /tmp/ccbk7hSb.s:470    .text.morse_hex:0000004c $d
+     /tmp/ccbk7hSb.s:481    .rodata.mrse:00000000 mrse
+     /tmp/ccbk7hSb.s:477    .rodata.mrse:00000000 $d
+     /tmp/ccbk7hSb.s:627    .rodata.h:00000000 $d
+     /tmp/ccbk7hSb.s:631    .rodata.h:00000000 h
+                     .debug_frame:00000010 $d
+
+UNDEFINED SYMBOLS
+HAL_GPIO_WritePin

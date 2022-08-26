@@ -1,0 +1,78 @@
+Configuration	ldrfixedL431
+STM32CubeMX 	6.3.0
+Date	08/23/2022
+MCU	STM32L431RBTx
+
+
+
+PERIPHERALS	MODES	FUNCTIONS	PINS
+CAN1	Activated	CAN1_RX	PB8
+CAN1	Activated	CAN1_TX	PB9
+RCC	Crystal/Ceramic Resonator	RCC_OSC_IN	PH0-OSC_IN (PH0)
+RCC	Crystal/Ceramic Resonator	RCC_OSC_OUT	PH1-OSC_OUT (PH1)
+SYS	TIM16	SYS_VS_tim16	VP_SYS_VS_tim16
+TIM15	Internal Clock	TIM15_VS_ClockSourceINT	VP_TIM15_VS_ClockSourceINT
+TIM15	Output Compare No Output	TIM15_VS_no_output1	VP_TIM15_VS_no_output1
+USART1	Asynchronous	USART1_RX	PA10
+USART1	Asynchronous	USART1_TX	PA9
+
+
+
+Pin Nb	PINs	FUNCTIONs	LABELs
+5	PH0-OSC_IN (PH0)	RCC_OSC_IN	
+6	PH1-OSC_OUT (PH1)	RCC_OSC_OUT	
+26	PB0	GPIO_Output	LED_GRN
+27	PB1	GPIO_Output	LED_RED
+42	PA9	USART1_TX	
+43	PA10	USART1_RX	
+61	PB8	CAN1_RX	
+62	PB9	CAN1_TX	
+PERIPHERALS	MODES	FUNCTIONS	PINS
+CAN1	Activated	CAN1_RX	PB8
+CAN1	Activated	CAN1_TX	PB9
+RCC	Crystal/Ceramic Resonator	RCC_OSC_IN	PH0-OSC_IN (PH0)
+RCC	Crystal/Ceramic Resonator	RCC_OSC_OUT	PH1-OSC_OUT (PH1)
+SYS	TIM16	SYS_VS_tim16	VP_SYS_VS_tim16
+TIM15	Internal Clock	TIM15_VS_ClockSourceINT	VP_TIM15_VS_ClockSourceINT
+TIM15	Output Compare No Output	TIM15_VS_no_output1	VP_TIM15_VS_no_output1
+USART1	Asynchronous	USART1_RX	PA10
+USART1	Asynchronous	USART1_TX	PA9
+
+
+
+Pin Nb	PINs	FUNCTIONs	LABELs
+5	PH0-OSC_IN (PH0)	RCC_OSC_IN	
+6	PH1-OSC_OUT (PH1)	RCC_OSC_OUT	
+26	PB0	GPIO_Output	LED_GRN
+27	PB1	GPIO_Output	LED_RED
+42	PA9	USART1_TX	
+43	PA10	USART1_RX	
+61	PB8	CAN1_RX	
+62	PB9	CAN1_TX	
+
+
+
+SOFTWARE PROJECT
+
+Project Settings : 
+Project Name : ldrfixedL431
+Project Folder : /home/deh/GliderWinchItems/CANloader/ldrfixedL431
+Toolchain / IDE : Makefile
+Firmware Package Name and Version : STM32Cube FW_L4 V1.17.0
+
+
+Code Generation Settings : 
+STM32Cube MCU packages and embedded software packs : Copy all used libraries into the project folder
+Generate peripheral initialization as a pair of '.c/.h' files per peripheral : No
+Backup previously generated files when re-generating : No
+Delete previously generated files when not re-generated : Yes
+Set all free pins as analog (to optimize the power consumption) : No
+
+
+Toolchains Settings : 
+Compiler Optimizations : 
+
+
+
+
+
