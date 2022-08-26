@@ -1,0 +1,9 @@
+#!/bin/bash
+
+export FLOAT_TYPE=hard
+
+rm build/ldrfixedL431.elf
+make
+
+./script-all ldrfixedL431
+
