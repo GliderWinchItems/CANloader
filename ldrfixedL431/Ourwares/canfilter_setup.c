@@ -5,7 +5,6 @@
 *******************************************************************************/
 #include "canfilter_setup.h"
 
-#include "CanTask.h"
 #include "can_iface.h"
 
 struct CANFILTERW

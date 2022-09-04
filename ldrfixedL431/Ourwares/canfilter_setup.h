@@ -9,7 +9,7 @@
 
 #include "stm32l4xx_hal.h"
 #include "stm32l4xx_hal_can.h"
-#include "FreeRTOS.h"
+//#include "FreeRTOS.h"
 
 /* *************************************************************************/
 HAL_StatusTypeDef canfilter_setup_first(uint8_t cannum, CAN_HandleTypeDef *phcan, uint8_t slavebankdmarc);

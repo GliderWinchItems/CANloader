@@ -35,6 +35,7 @@ extern "C" {
 #define ADDR_SCB_VTOR 0xE000ED08
 #define ADDR_FLASH_SIZE 0x1FFF75E0
 #define ADDR_UNIQUE_ID  0x1FFF7590
+#define SYSCLOCKFREQ 16000000  
 /* USER CODE END Includes */
 
 /* Exported types ------------------------------------------------------------*/

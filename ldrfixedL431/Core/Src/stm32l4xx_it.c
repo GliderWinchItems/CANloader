@@ -23,6 +23,7 @@
 #include "stm32l4xx_it.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "morse.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -93,6 +94,7 @@ void HardFault_Handler(void)
   while (1)
   {
     /* USER CODE BEGIN W1_HardFault_IRQn 0 */
+    morse_trap(111);
     /* USER CODE END W1_HardFault_IRQn 0 */
   }
 }
@@ -108,6 +110,7 @@ void MemManage_Handler(void)
   while (1)
   {
     /* USER CODE BEGIN W1_MemoryManagement_IRQn 0 */
+    morse_trap(222);
     /* USER CODE END W1_MemoryManagement_IRQn 0 */
   }
 }
@@ -123,6 +126,7 @@ void BusFault_Handler(void)
   while (1)
   {
     /* USER CODE BEGIN W1_BusFault_IRQn 0 */
+    morse_trap(333);
     /* USER CODE END W1_BusFault_IRQn 0 */
   }
 }
@@ -138,6 +142,7 @@ void UsageFault_Handler(void)
   while (1)
   {
     /* USER CODE BEGIN W1_UsageFault_IRQn 0 */
+    morse_trap(444);
     /* USER CODE END W1_UsageFault_IRQn 0 */
   }
 }

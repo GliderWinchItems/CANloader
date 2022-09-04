@@ -13,7 +13,6 @@
 
 #include "common_misc.h"
 #include "common_can.h"
-#include "can_driver.h"
 
 /* **************************************************************************************/
 void canwinch_ldrproto_init(uint32_t iamunitnumber);

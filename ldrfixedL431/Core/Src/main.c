@@ -28,6 +28,14 @@
 #include "system_reset.h"
 #include "morse.h"
 #include "canwinch_ldrproto.h"
+#include "can_iface.h"
+#include "canfilter_setup.h"
+
+#include "crc-32_hw.h"
+#include "crc-32_sw.h"
+
+#include "crc-32_nib.h"
+#include "crc-32_min.h"
 
 #define SYSCLOCKFREQ 16000000
 
@@ -55,8 +63,19 @@ struct CAN_CTLBLOCK* pctl1;
 /* USER CODE BEGIN PTD */
  uint32_t flashblocksize1;
  uint32_t unique_id[3];
+ uint32_t can_waitdelay_ct;
  uint16_t flashsize;
  uint8_t ldr_phase;
+
+ struct CAN_CTLBLOCK* pctl0; // Pointer to CAN1 control block
+//struct CAN_CTLBLOCK* pctl1; // Pointer to CAN2 control block
+
+uint32_t debugTX1b;
+uint32_t debugTX1b_prev;
+
+uint32_t debugTX1c;
+uint32_t debugTX1c_prev;
+
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -70,6 +89,8 @@ struct CAN_CTLBLOCK* pctl1;
 
 /* Private variables ---------------------------------------------------------*/
 CAN_HandleTypeDef hcan1;
+
+CRC_HandleTypeDef hcrc;
 
 TIM_HandleTypeDef htim15;
 
@@ -85,6 +106,7 @@ static void MX_GPIO_Init(void);
 static void MX_CAN1_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_TIM15_Init(void);
+static void MX_CRC_Init(void);
 /* USER CODE BEGIN PFP */
 char* buffer = "\n\rX ldrfixedL431 started 123";
 /* USER CODE END PFP */
@@ -113,7 +135,7 @@ PUTCHAR_PROTOTYPE
 int main(void)
 {
   /* USER CODE BEGIN 1 */
-   uint32_t dtw; // DTW time
+   volatile uint32_t dtw; // DTW time
 /* --------------------- Type of RESET detection and dispatch ------------------------------------- */
   extern void* __appjump; // Defined in ldr.ld file
   /* Check type of RESET and set us on the correct journey. */
@@ -155,10 +177,29 @@ int main(void)
   MX_CAN1_Init();
   MX_USART1_UART_Init();
   MX_TIM15_Init();
+  MX_CRC_Init();
   /* USER CODE BEGIN 2 */
   DTW_counter_init();
 
    printf("\n\n\n\r######### ldrfixedL431 STARTS");
+
+/* Setup TX linked list for CAN  */
+   // CAN1 (CAN_HandleTypeDef *phcan, uint8_t canidx, uint16_t numtx, uint16_t numrx);
+  pctl0 = can_iface_init(&hcan1, 0, 64, 32);       
+  if (pctl0 == NULL) morse_trap(118); // Panic LED flashing
+  if (pctl0->ret < 0) morse_trap(119);  
+  
+  /* Setup CAN hardware filters to default to accept all ids. */
+  HAL_StatusTypeDef Cret;
+  Cret = canfilter_setup_first(0, &hcan1, 15); // CAN1
+  if (Cret == HAL_ERROR) morse_trap(122);
+
+      /* Select interrupts for CAN1 */
+  HAL_CAN_ActivateNotification(&hcan1, \
+    CAN_IT_TX_MAILBOX_EMPTY     |  \
+    CAN_IT_RX_FIFO0_MSG_PENDING |  \
+    CAN_IT_RX_FIFO1_MSG_PENDING    );
+
 
   #define DTW_INC_printf (1000 * 16000) // 16 MHz sysclock
   uint32_t DTW_next_LED = DTWTIME;
@@ -166,12 +207,63 @@ int main(void)
   uint32_t DTW_next_printf = DTWTIME;
  
   unsigned int mctr = 0;
-
+#if 0
   printf ("\n\rControl/status register (RCC_CSR) : %08x\n\r",(unsigned int)RCC->CSR);
   RCC->CSR |= (1 << 24);
   printf ("Control/status register (RCC_CSR) : %08x After RMVF written\n\r",(unsigned int)RCC->CSR);
   RCC->CSR |= (7 << 29);
   printf ("Control/status register (RCC_CSR) : %08x After LPWR written\n\r",(unsigned int)RCC->CSR);
+
+  //uint64_t zz1 = 0x12345678ABCDEF01; // word order
+  uint64_t zz1 = 0x1122334455667788;
+  //uint64_t zz = 0x01efCDab78563412;  // byte order of zz1
+  uint64_t zz = 0x8877665544332211;
+  uint32_t ww[2] = {0x88776655,0x44332211};
+  uint32_t wwa[2] = {0x44332211,0x88776655};
+  //https://crccalc.com/
+  uint8_t zzb[8] = {0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88};
+ 
+ #define PDATA (uint32_t*)0x08008000
+  #define DLEN  100000
+
+  printf("\n\rPDATA: 0x%08X DLEN: %5d\n\r",(unsigned int)PDATA,(unsigned int)DLEN);
+
+ CRC->CR =0x01;
+ HAL_CRC_Init(&hcrc);
+  uint32_t t2;
+  uint32_t t1 = DTWTIME;
+  uint32_t crc3 = HAL_CRC_Calculate(&hcrc, PDATA, DLEN/4);
+  uint32_t t2x = DTWTIME - t1;
+
+  rc_crc32_hw_init();
+
+  
+  t1 = DTWTIME;
+  uint32_t crc1 = rc_crc32_sw((uint8_t*)PDATA, DLEN); // CRC1: B9196C38 = web site
+  t2 = DTWTIME - t1;
+  printf("CRC1   sw rosetta: %08X  %08X %7d %6d\n\r",(unsigned int)crc1,(unsigned int)~crc1,(unsigned int)t2,(unsigned int)t2/16);
+  
+  t1 = DTWTIME;
+  uint32_t crc2 = rc_crc32_hw(PDATA, DLEN/4);
+  t2 = DTWTIME - t1;
+  printf("CRC2   hw crc mod: %08X  %08X %7d %6d\n\r",(unsigned int)~crc2,(unsigned int)crc2,(unsigned int)t2,(unsigned int)t2/16);
+
+  printf("CRC3 HAL CRC CALC: %08X  %08X %7d %6d\n\r",(unsigned int)crc3,(unsigned int)~crc3,(unsigned int)t2x,(unsigned int)t2x/16);
+
+  t1 = DTWTIME;
+  uint32_t crc4 = crc_32_nib_calc(PDATA, DLEN/4);
+  t2 = DTWTIME - t1;
+  printf("CRC4 nibble table: %08X  %08X %7d %6d\n\r",(unsigned int)crc4,(unsigned int)~crc4,(unsigned int)t2,(unsigned int)t2/16);
+
+  t1 = DTWTIME;
+  uint32_t crc5 = crc_32_min_calc(PDATA, DLEN/4);
+  t2 = DTWTIME - t1;
+  printf("CRC5 min,no table: %08X  %08X %7d %6d\n\r",(unsigned int)crc5,(unsigned int)~crc5,(unsigned int)t2,(unsigned int)t2/16);
+
+  printf("\n\r");
+//while(1==1);
+
+#endif
 
   flashblocksize1 = 2048; // 
   unique_id[0] = *(uint32_t*)(ADDR_UNIQUE_ID+0);
@@ -197,9 +289,12 @@ int main(void)
 //  uint32_t flashincrement = SYSCLOCKFREQ/6;
 
   // for debug multipy the increment to give the hapless Op time to think
-  uint32_t can_waitdelay_ct = (DTWTIME + 5*SYSCLOCKFREQ); // Set number secs to wait before jumping to app
+  can_waitdelay_ct = (DTWTIME + 5*SYSCLOCKFREQ); // Set number secs to wait before jumping to app
 
   printf("\n\r\nAddresses: &__appjump %08X   __appjump %08X\n\r\n",(unsigned int)&__appjump, (unsigned int)__appjump);
+
+  HAL_CAN_Start(&hcan1); // CAN1
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -228,7 +323,7 @@ int main(void)
     }
 
     /* Do loader'ing, if there are applicable msgs. */
-//    canwinch_ldrproto_poll();
+    canwinch_ldrproto_poll();
 
     /* Have we written to flash?  If so, don't jump to the the app unless commanded. */
     if (ldr_phase == 0)
@@ -340,6 +435,37 @@ static void MX_CAN1_Init(void)
   /* USER CODE BEGIN CAN1_Init 2 */
 
   /* USER CODE END CAN1_Init 2 */
+
+}
+
+/**
+  * @brief CRC Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_CRC_Init(void)
+{
+
+  /* USER CODE BEGIN CRC_Init 0 */
+
+  /* USER CODE END CRC_Init 0 */
+
+  /* USER CODE BEGIN CRC_Init 1 */
+
+  /* USER CODE END CRC_Init 1 */
+  hcrc.Instance = CRC;
+  hcrc.Init.DefaultPolynomialUse = DEFAULT_POLYNOMIAL_ENABLE;
+  hcrc.Init.DefaultInitValueUse = DEFAULT_INIT_VALUE_ENABLE;
+  hcrc.Init.InputDataInversionMode = CRC_INPUTDATA_INVERSION_NONE;
+  hcrc.Init.OutputDataInversionMode = CRC_OUTPUTDATA_INVERSION_DISABLE;
+  hcrc.InputDataFormat = CRC_INPUTDATA_FORMAT_WORDS;
+  if (HAL_CRC_Init(&hcrc) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN CRC_Init 2 */
+
+  /* USER CODE END CRC_Init 2 */
 
 }
 

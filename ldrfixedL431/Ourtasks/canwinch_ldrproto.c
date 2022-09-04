@@ -39,9 +39,15 @@ Plus unknown amount of write flash time.
 #include "system_reset.h"
 #include "main.h"
 #include "flash_write.h"
+#include "can_iface.h"
+#include "morse.h"
+#include "system_reset.h"
+#include "DTW_counter.h"
+#include "crc-32_hw.h"
 
 
 extern struct CAN_CTLBLOCK* pctl1;
+extern struct CAN_CTLBLOCK* pctl0; // Pointer to CAN1 control block
 
 static unsigned int debugPctr = 0;
 
@@ -85,7 +91,7 @@ static struct CANRCVBUF can_msg_rd;	// Read
 static struct CANRCVBUF can_msg_wr;	// Write
 
 /* Switch that shows if we have a program loading underway and should not jump to an app */
-int ldr_phase = 0;
+uint8_t ldr_phase = 0;
 
 /******************************************************************************
  * static void can_msg_put(struct CANRCVBUF* pcan);
@@ -94,7 +100,7 @@ int ldr_phase = 0;
  ******************************************************************************/
 static void can_msg_put(struct CANRCVBUF* pcan)
 {
-	can_driver_put(pctl1, pcan, 4, 0);
+	can_driver_put(pctl0, pcan, 4, 0);
 }
 /******************************************************************************
  * static void sendcanCMD(uint8_t cmd);
@@ -103,7 +109,6 @@ static void can_msg_put(struct CANRCVBUF* pcan)
  ******************************************************************************/
 static void sendcanCMD(uint8_t cmd)
 {
-	
 	can_msg_cmd.dlc = 1;
 	can_msg_cmd.cd.uc[0] = cmd;
 	can_msg_put(&can_msg_cmd);
@@ -466,7 +471,7 @@ if ( (pstart < (uint32_t)0x08004000) ||  ( (pstart + count) > (uint32_t)0x081000
 
 printf("rc_crc32: %08X %08X %08X\n\r",(unsigned int)pstart, (unsigned int)(pstart+count), (unsigned int)count);
 	/* Compute the crc and place in msg to be returned. */
-	crc32 = rc_crc32((unsigned char*)pstart, count );
+	crc32 = rc_crc32_hw((uint32_t*)pstart, (count/3) );
 printf("Send crc-32: %08X\n\r",(unsigned int)crc32);
 
 	// Return msg with crc
@@ -604,7 +609,6 @@ printf("send4: %X %X %X %X %X %X\n\r", (unsigned int)n,
  * ************************************************************************************** */
 extern uint8_t* __appoffset;
 extern uint8_t* __highflashp;
-extern uint8_t* __highflashlayout;
 
 void do_getflashpaddr(struct CANRCVBUF* p)
 {
@@ -641,32 +645,58 @@ printf("\n\r");
 void do_cmd_cmd(struct CANRCVBUF* p)
 {
 /*	
-	#define LDR_SET_ADDR	1	// 5 Set address pointer (not FLASH) (bytes 2-5):  Respond with last written address.
-	#define LDR_SET_ADDR_FL	2	// 5 Set address pointer (FLASH) (bytes 2-5):  Respond with last written address.
-	#define LDR_CRC		3	// 8 Get CRC: 2-4 = count; 5-8 = start address 
-	#define LDR_ACK		4	// 1 ACK: Positive acknowledge (Get next something)
-	#define LDR_NACK	5	// 1 NACK: Negative acknowledge (So? How do we know it is wrong?)
-	#define LDR_JMP		6	// 5 Jump: to address supplied (bytes 2-5)
-	#define LDR_WRBLK	7	// 1 Done with block: write block with whatever you have.
-	#define LDR_RESET	8	// 1 RESET: Execute a software forced RESET
-	#define LDR_XON		9	// 1 Resume sending
-	#define LDR_XOFF	10	// 1 Stop sending
-	#define LDR_FLASHSIZE	11	// 1 Get flash size; bytes 2-3 = flash block size (short)
-	#define LDR_ADDR_OOB	12	// 1 Address is out-of-bounds
-	#define LDR_DLC_ERR	13	// 1 Unexpected DLC
-	#define LDR_FIXEDADDR	14	// 5 Get address of flash with fixed loader info (e.g. unique CAN ID)
-	#define LDR_RD4		15	// 5 Read 4 bytes at address (bytes 2-5)
-	#define LDR_APPOFFSET	16	// 5 Get address where application begins storing.
-	#define LDR_HIGHFLASHH	17	// 5 Get address of beginning of struct with crc check and CAN ID info for app
-	#define LDR_HIGHFLASHP	18	// 5 Get address of beginning of struct with app calibrations, parameters, etc.
-	#define LDR_ASCII_SW	19	// 2 Switch mode to send printf ASCII in CAN msgs
-	#define LDR_ASCII_DAT	20	// 3-8  1=line position;2-8=ASCII chars
-	#define LDR_WRVAL_PTR	21	// 2-8 Write: 2-8=bytes to be written via address ptr previous set.
-	#define LDR_WRVAL_AI	22	// 8 Write: 2=memory area; 3-4=index; 5-8=one 4 byte value
+NSERT INTO CMD_CODES  VALUES ('LDR_SET_ADDR',      1,	'5 Set address pointer (not FLASH) (bytes 2-5):  Respond with last written address.');
+INSERT INTO CMD_CODES  VALUES ('LDR_SET_ADDR_FL',   2,	'5 Set address pointer (FLASH) (bytes 2-5):  Respond with last written address.');
+INSERT INTO CMD_CODES  VALUES ('LDR_CRC',           3,	'8 Get CRC: 2-4 = count; 5-8 = start address; Reply CRC 2-4 na, 5-8 computed CRC ');
+INSERT INTO CMD_CODES  VALUES ('LDR_ACK',           4,	'1 ACK: Positive acknowledge (Get next something)');
+INSERT INTO CMD_CODES  VALUES ('LDR_NACK',          5,	'1 NACK: Negative acknowledge (So? How do we know it is wrong?)');
+INSERT INTO CMD_CODES  VALUES ('LDR_JMP',           6,	'5 Jump: to address supplied (bytes 2-5)');
+INSERT INTO CMD_CODES  VALUES ('LDR_WRBLK',         7,	'1 Done with block: write block with whatever you have.');
+INSERT INTO CMD_CODES  VALUES ('LDR_RESET',         8,	'1 RESET: Execute a software forced RESET');
+INSERT INTO CMD_CODES  VALUES ('LDR_XON',           9,	'1 Resume sending');
+INSERT INTO CMD_CODES  VALUES ('LDR_XOFF',          10,	'1 Stop sending');
+INSERT INTO CMD_CODES  VALUES ('LDR_FLASHSIZE',		11,	'1 Get flash size; bytes 2-3 = flash block size (short)');
+INSERT INTO CMD_CODES  VALUES ('LDR_ADDR_OOB',		12,	'1 Address is out-of-bounds');
+INSERT INTO CMD_CODES  VALUES ('LDR_DLC_ERR',		13,	'1 Unexpected DLC');
+INSERT INTO CMD_CODES  VALUES ('LDR_FIXEDADDR',		14,	'5 Get address of flash with fixed loader info (e.g. unique CAN ID)');
+INSERT INTO CMD_CODES  VALUES ('LDR_RD4',           15,	'5 Read 4 bytes at address (bytes 2-5)');
+INSERT INTO CMD_CODES  VALUES ('LDR_APPOFFSET',		16,	'5 Get address where application begins storing.');
+INSERT INTO CMD_CODES  VALUES ('LDR_HIGHFLASHH',	17,	'5 Get address of beginning of struct with crc check and CAN ID info for app');
+INSERT INTO CMD_CODES  VALUES ('LDR_HIGHFLASHP',	18,	'8 Get address and size of struct with app calibrations, parameters, etc.');
+INSERT INTO CMD_CODES  VALUES ('LDR_ASCII_SW',		19,	'2 Switch mode to send printf ASCII in CAN msgs');
+INSERT INTO CMD_CODES  VALUES ('LDR_ASCII_DAT',		20,	'3-8 [1]=line position;[2]-[8]=ASCII chars');
+INSERT INTO CMD_CODES  VALUES ('LDR_WRVAL_PTR',		21,	'2-8 Write: 2-8=bytes to be written via address ptr previous set.');
+INSERT INTO CMD_CODES  VALUES ('LDR_WRVAL_PTR_SIZE',22,	'Write data payload size');
+INSERT INTO CMD_CODES  VALUES ('LDR_WRVAL_AI',		23,	'8 Write: 2=memory area; 3-4=index; 5-8=one 4 byte value');
+INSERT INTO CMD_CODES  VALUES ('LDR_SQUELCH',		24,	'8 Send squelch sending tick ct: 2-8 count');
 
+INSERT INTO CMD_CODES  VALUES ('CMD_GET_IDENT',		30,	'Get parameter using indentification name/number in byte [1]');
+INSERT INTO CMD_CODES  VALUES ('CMD_PUT_IDENT',		31,	'Put parameter using indentification name/number in byte [1]');
+INSERT INTO CMD_CODES  VALUES ('CMD_GET_INDEX',		32,	'Get parameter using index name/number in byte [1]');
+INSERT INTO CMD_CODES  VALUES ('CMD_PUT_INDEX',		33,	'Put parameter using index name/number in byte [1]; parameter in [2]-[5]');
+INSERT INTO CMD_CODES  VALUES ('CMD_REVERT',        34,	'Revert (re-initialize) working parameters/calibrations/CANIDs back to stored non-volatile values');
+INSERT INTO CMD_CODES  VALUES ('CMD_SAVE',          35,	'Write current working parameters/calibrations/CANIDs to non-volatile storage');
+INSERT INTO CMD_CODES  VALUES ('CMD_GET_READING',   36,	'Send a reading for the code specified in byte [1] specific to function');
+INSERT INTO CMD_CODES  VALUES ('CMD_GET_READING_BRD',  37,	'Send a reading for the code specified in byte [1] for board; common to functions');
+INSERT INTO CMD_CODES  VALUES ('CMD_LAUNCH_PARM_HDSHK',38,	'Send msg to handshake transferring launch parameters');
+INSERT INTO CMD_CODES  VALUES ('CMD_SEND_LAUNCH_PARM', 39,	'Send msg to send burst of parameters');
+INSERT INTO CMD_CODES  VALUES ('CMD_REQ_HISTOGRAM',    40, 'Request histogram: [1] ADC #: [2] # consecutive:[3]-[6] # DMA buffers accumuleted in bins');
+INSERT INTO CMD_CODES  VALUES ('CMD_THISIS_HISTODATA', 41, 'Histogram data item: [1] ADC #:[2] bin # (0 - n), [3]-[6] bin count');
+
+INSERT INTO CMD_CODES  VALUES ('CMD_CMD_TYPE1',		42,	'[1]-[7] format 1');
+INSERT INTO CMD_CODES  VALUES ('CMD_CMD_TYPE2',		43,	'[1]-[7] format 2');
+INSERT INTO CMD_CODES  VALUES ('CMD_CMD_TYPE3',		44,	'[1]-[7] format 3');
+INSERT INTO CMD_CODES  VALUES ('CMD_CMD_HEARTBEAT', 45,	'[1]-[7] Heartbeat format specific to unit');
+INSERT INTO CMD_CODES  VALUES ('CMD_CMD_TYPE4',     46,	'[1]-[7] format 4');
+
+INSERT INTO CMD_CODES  VALUES ('CMD_CMD_SYS_RESET_ALL',166,	'0xA6: [0] Cause System Reset for all');
+INSERT INTO CMD_CODES  VALUES ('CMD_CMD_SYS_RESET_CID',167,	'0xA7: [0] Cause System Reset for CAN ID sent in payload');
+INSERT INTO CMD_CODES  VALUES ('CMD_CMD_SYS_RESET_EXT',168,	'0xA8: [0] Extend current loader wait duration for all, [1] = wait in 0.1 sec steps');
 */
 //printf("Q: %02X\n\r",p->cd.uc[0]);  // Debug: Display command codes coming in
 	/* Here, we have a command in the ID field. */
+	extern uint32_t can_waitdelay_ct;
+	uint32_t x	;
 	switch (p->cd.uc[0])	// Command code
 	{
 	case LDR_SET_ADDR: // Set address pointer (bytes 2-5):  Respond with last written address.
@@ -718,7 +748,7 @@ void do_cmd_cmd(struct CANRCVBUF* p)
 		break;
 
 	case LDR_HIGHFLASHH:	// Send address of high flash area
-		do_send4(p, (uint32_t)&__highflashlayout);
+//		do_send4(p, (uint32_t)&__highflashlayout);
 		break;
 
 	case LDR_HIGHFLASHP:	// Get address of beginning of crc check info for app
@@ -729,6 +759,22 @@ void do_cmd_cmd(struct CANRCVBUF* p)
 		// Write data starting at payload[1], dlc holds byte ct: 1-7
 		do_datawrite(&p->cd.uc[1], (0x7f & p->dlc) - 1, p);
 		sendcanCMD(LDR_ACK);
+		break;
+
+	case CMD_CMD_SYS_RESET_ALL: // Reset cmd is for "all"
+		system_reset();
+		break;
+
+	case CMD_CMD_SYS_RESET_CID:	// Reset cmd is only of "us"
+		x = *(uint32_t*)&p->cd.uc[4];
+		if (x == p->id)
+		{
+			system_reset();
+		}
+		break;
+
+	case CMD_CMD_SYS_RESET_EXT: // Extend loader wait timeout (for "all")
+		can_waitdelay_ct = (DTWTIME + (p->cd.uc[1]+1)*(SYSCLOCKFREQ/10));
 		break;
 
 	default:		// Not a defined command
@@ -748,10 +794,33 @@ printf("BOGUS CMD CODE: %X %08X %X  %08X %08X\n\r",
  * @param	: pctl = pointer control block for CAN module being used
  * @brief	: If msg is for this unit, then do something with it.
  * ************************************************************************************** */
+static uint8_t sw_oto = 0;
+static struct CANTAKEPTR* ptake;
 void canwinch_ldrproto_poll(void)
 {
-	struct CANRCVBUF* pcan;
+	struct CANRCVBUF can;
 
+	if (sw_oto == 0)
+	{
+		sw_oto = 1;
+		ptake = can_iface_add_take(pctl0);
+		if (ptake == NULL) morse_trap(481);
+
+	}
+	if (ptake->ptake != ptake->pcir->pwork)
+	{ // Here, there is a CAN msg in the buffer
+		can = ptake->ptake->can; // Save local copy of CAN msg
+
+		/* Advance ptr in circular buffer. */
+		ptake->ptake += 1;
+		if (ptake->ptake == ptake->pcir->pend)
+			ptake->ptake = ptake->pcir->pbegin;
+
+		/* Do something! */
+		do_cmd_cmd(&can);		// Execute command
+	}
+
+#if 0 // Old code jic
 	/* Check incoming msgs. */
 	while ((pcan = can_driver_peek0(pctl1)) != NULL) // RX0 have a msg?
 	{ // Here we have a FIFO0 CAN msg
@@ -764,13 +833,15 @@ void canwinch_ldrproto_poll(void)
 		if ( (pcan->id & 0x0ffffffe) == fixedaddress.canid_ldr)
 		{ // Here CAN ID is for this unit/loader
 //printf ("X: %08X %d %08X %08X\n\r",pcan->id,pcan->dlc,pcan->cd.ui[0],pcan->cd.ui[1]);
-//$			do_cmd_cmd(pcan);		// Execute command 
+			do_cmd_cmd(pcan);		// Execute command 
 		}
 		can_driver_toss0(pctl1);	// Release buffer block
 	}
 	/* Dump FIFO1 msgs. */
 	while ((can_driver_peek1(pctl1)) != NULL)	// RX1 have a msg?
 		can_driver_toss1(pctl1); 	// Release buffer block
+#endif
+
 	return;
 }
 

@@ -1,6 +1,6 @@
 Configuration	ldrfixedL431
 STM32CubeMX 	6.3.0
-Date	08/23/2022
+Date	08/29/2022
 MCU	STM32L431RBTx
 
 

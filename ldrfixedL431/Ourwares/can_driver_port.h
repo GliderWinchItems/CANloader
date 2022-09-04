@@ -10,7 +10,7 @@
 #ifndef __CAN_DRIVER_PORT
 #define __CAN_DRIVER_PORT
 
-#include "../../svn_discoveryf4/sw_discoveryf4/trunk/lib/libopencm3/cm3/common.h"
+//#include "../../svn_discoveryf4/sw_discoveryf4/trunk/lib/libopencm3/cm3/common.h"
 #include "common_can.h"
 
 
