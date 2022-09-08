@@ -36,6 +36,18 @@ extern "C" {
 #define ADDR_FLASH_SIZE 0x1FFF75E0
 #define ADDR_UNIQUE_ID  0x1FFF7590
 #define SYSCLOCKFREQ 16000000  
+
+#define BEGIN_FLASH 0x08008000
+#define APP_JMPADDR 0x08008004
+
+#define APPERR_APP_ENTRY_OOR (1 << 0) // App out-of-range address: entry
+#define APPERR_APP_CRC_ADDR  (1 << 1) // App out-of-range address: crc
+#define APPERR_APP_CHK_ADDR  (1 << 2) // App out-of-range address: checksum
+#define APPERR_APP_CRC_NE    (1 << 2) // Computed not equal specified: CRC-32
+#define APPERR_APP_CHK_NE    (1 << 2) // Computed not equal specified: checksum
+
+
+
 /* USER CODE END Includes */
 
 /* Exported types ------------------------------------------------------------*/

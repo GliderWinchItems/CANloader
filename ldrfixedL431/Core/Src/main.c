@@ -67,6 +67,14 @@ struct CAN_CTLBLOCK* pctl1;
  uint16_t flashsize;
  uint8_t ldr_phase;
 
+uint64_t binchksum;
+uint32_t* papp_crc;
+uint32_t* papp_chk;
+ uint8_t apperr;
+
+unsigned int ck; 
+uint32_t chkctr;
+
  struct CAN_CTLBLOCK* pctl0; // Pointer to CAN1 control block
 //struct CAN_CTLBLOCK* pctl1; // Pointer to CAN2 control block
 
@@ -162,7 +170,7 @@ int main(void)
   HAL_Init();
 
   /* USER CODE BEGIN Init */
-
+  apperr = 0;
   /* USER CODE END Init */
 
   /* Configure the system clock */
@@ -291,7 +299,80 @@ int main(void)
   // for debug multipy the increment to give the hapless Op time to think
   can_waitdelay_ct = (DTWTIME + 5*SYSCLOCKFREQ); // Set number secs to wait before jumping to app
 
-  printf("\n\r\nAddresses: &__appjump %08X   __appjump %08X\n\r\n",(unsigned int)&__appjump, (unsigned int)__appjump);
+//  printf("\n\r\nAddresses: &__appjump %08X   __appjump %08X\n\r",(unsigned int)&__appjump, (unsigned int)__appjump);
+
+  /* ----------------- CRC|checksum check of application. ---------------------------------- */
+  // Get addresses
+
+  uint32_t* papp_entry = (uint32_t*)((uint32_t)(*(uint32_t**)0x08008004) & ~1L);
+  if ((papp_entry >= (uint32_t*)(BEGIN_FLASH + (flashsize*1024))) || (papp_entry < (uint32_t*)BEGIN_FLASH))
+  { // Here bogus address (which could crash processor)
+    apperr |= APPERR_APP_ENTRY_OOR;
+  }
+  else
+  {
+ //   printf("App addr entry: %08X\n\r",(unsigned int)papp_entry);
+    
+    papp_crc = *(uint32_t**)(papp_entry-1);
+    if ((papp_crc >= (uint32_t*)(BEGIN_FLASH + (flashsize*1024))) || (papp_crc < (uint32_t*)BEGIN_FLASH))
+    {
+     apperr |= APPERR_APP_CRC_ADDR;
+    }
+    else
+    {
+//     printf("App addr   crc: %08X App crc  %08X\n\r",(unsigned int)papp_crc,*(unsigned int*)papp_crc);
+    }
+    
+    papp_chk =  (uint32_t*)(*(uint32_t**)(papp_entry-1)+1);
+    if ((papp_chk >= (uint32_t*)(BEGIN_FLASH + (flashsize*1024))) || (papp_chk < (uint32_t*)BEGIN_FLASH))
+    {
+     apperr |= APPERR_APP_CHK_ADDR;
+    }
+    else
+    {
+ //     printf("App addr   chk: %08X App chk  %08X\n\r",(unsigned int)papp_chk,*(unsigned int*)papp_chk);
+    }
+  }
+  if (apperr == 0)
+  { // Here, no addresses were out-of-range. Check CRC and checksum
+    uint32_t* p = (uint32_t*)BEGIN_FLASH; // Point to beginning of app flash
+    binchksum   = 0; // Checksum init
+    chkctr      = 0;
+    /* Bit 12 CRCEN: CRC clock enable */
+    RCC->AHB1ENR |= RCC_AHB1ENR_CRCEN;
+    /* Reset sets polynomial to 0x04C11DB7 and INIT to 0xFFFFFFFF */
+    CRC->CR = 0x01; // 32b poly, + reset CRC computation
+    while (p < (uint32_t*)papp_crc)
+    {
+      *(__IO uint32_t*)CRC_BASE = *p; 
+      binchksum += *p;
+      p += 1;
+      chkctr += 4;
+    }
+    ck = CRC->DR;
+    // Wrap 64b sum into 32b word
+    uint32_t tmp  = (binchksum >> 32);
+    binchksum = (binchksum & 0xffffffff) + tmp;
+    tmp  = (binchksum >> 32);
+    binchksum = (binchksum & 0xffffffff) + tmp;
+ //   printf("CHK CTR: 0x%08X %d\n\r",(unsigned int)chkctr,(unsigned int)chkctr);
+  }
+ // printf("checksum: 0x%08X CRC-32: 0x%08X\n\r",(unsigned int)binchksum,ck);
+
+//  uint32_t hwcrc = rc_crc32_hw((uint32_t*)BEGIN_FLASH, chkctr/4);
+//  printf("hw  crc: 0x%08X\n\r",~(unsigned int)hwcrc);
+
+  /* Do the CRCs and Checksums match? */
+  if (*(uint32_t*)papp_crc != ck)
+  {
+    apperr |= APPERR_APP_CRC_NE;
+    printf("CRC ERR: 0x%08x 0x%08x\n\r",(unsigned int)ck,*(unsigned int*)papp_crc);
+  }
+  if (*(uint32_t*)(papp_crc+1) != binchksum)
+  {
+    apperr |= APPERR_APP_CHK_NE;
+    printf("CHK ERR: 0x%08x 0x%08x\n\r",(unsigned int)binchksum,*(unsigned int*)(papp_crc+1));
+  }
 
   HAL_CAN_Start(&hcan1); // CAN1
 
@@ -330,11 +411,11 @@ int main(void)
     { // Here, we haven't done anything to disturb the integrity of the app
       if (  ((int)can_waitdelay_ct - (int)(DTWTIME)) < 0 )
       { // We timed out.
-        if (((unsigned int)&__appjump > (unsigned int)__appjump) || ((unsigned int)__appjump >= (unsigned int)0x08040000))
-        { // Here, jump address is bogus
-          printf("\n\r\n#### At offset %08X address %08X is bogus ####\n\r\n",(unsigned int)&__appjump, (unsigned int)__appjump);
-          dtw = (DTWTIME + (SYSCLOCKFREQ/2)); // Wait 1/2 sec for printf to complete
-          while (  ((int)dtw - (int)(DTWTIME)) > 0 );
+        if (apperr != 0)
+        { // Here app does not pass checks: jump address, crc and/or checksum mismatch
+//          printf("\n\r\n#### At offset %08X address %08X is bogus ####\n\r\n",(unsigned int)&__appjump, (unsigned int)__appjump);
+ //         dtw = (DTWTIME + (SYSCLOCKFREQ/2)); // Wait 1/2 sec for printf to complete
+   //       while (  ((int)dtw - (int)(DTWTIME)) > 0 );
           system_reset(); // Software reset
         }
         dtw = (DTWTIME + (SYSCLOCKFREQ/2)); // Wait 1/2 sec for printf to complete

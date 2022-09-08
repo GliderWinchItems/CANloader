@@ -73,6 +73,12 @@ __appoffset  = 0x08008000;
 /* Define output sections */
 SECTIONS
 {
+  /* This is used by the startup in order to find the end */
+  .beginof :
+  {
+   _begin_flash = .;   /* define a global symbol for begin of flash */
+  } >FLASH
+
   /* The startup code goes first into FLASH */
   .isr_vector :
   {
@@ -194,11 +200,10 @@ SECTIONS
 
  /* End section */
   . = ALIGN(4);
- 
  .endof :
  {
    /* This is used by the startup in order to find the end */
-   _limit_flash = .;   /* define a global symbol at the end of flash */
+    _end_prog = .;   /* define a global symbol at the end of flash */
  } >FLASH
 
   /* Remove information from the standard libraries */
