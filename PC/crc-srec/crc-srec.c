@@ -9,6 +9,7 @@
 
 gcc -Wall crc-srec.c crc-32_nib.c -o crc-srec 
 gcc -Wall crc-srec.c crc-32_nib.c -o crc-srec && ./crc-srec ../../ldrfixedL431/build/ldrfixedL431
+gcc -Wall crc-srec.c crc-32_nib.c -o crc-srec && ./crc-srec /home/deh/GliderWinchItems/BMS/bmsadbms1818/build/bms1818
 
 */
 

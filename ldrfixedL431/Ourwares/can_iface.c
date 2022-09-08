@@ -43,7 +43,7 @@ extern CAN_HandleTypeDef hcan2;
 #define YESABORTCODE
 
 /* Uncomment to cause TX msgs bit set to appear as received after sent. */
-#define CANMSGLOOPBACKALL
+//#define CANMSGLOOPBACKALL
 
 /* subroutine declarations */
 static void loadmbx2(struct CAN_CTLBLOCK* pctl);

@@ -14,7 +14,12 @@
 #include "common_misc.h"
 #include "common_can.h"
 
-/* **************************************************************************************/
+/******************************************************************************/
+void sendcanCMD_PAY1(uint8_t cmd,uint8_t pay1);
+/* @brief	: send a CAN msg with a command byte and status type byte
+ * @param	: cmd = command code 
+ * @param   : pay1 = .cd.uc[1] byte associated with the command code
+ * **************************************************************************************/
 void canwinch_ldrproto_init(uint32_t iamunitnumber);
 /* @brief	: Initialization for loader
  * @param	: Unit number 

@@ -73,11 +73,11 @@ union FLUN	// Assure aligment, etc.
 
 struct FLBLKBUF	// Working pointers and counts accompanying data for block
 {
-	union FLUN fb;	// Size of largest flash block (2048 bytes)
-	uint8_t*	base;		// Flash block base address
-	uint8_t*	end;		// Flash block end address + 1
-	uint8_t*	p;		// Byte pointer in flash block
-	uint16_t	sw;		// Write switch: 0 = skip, 1 = write, 2 = erase and write
+	union FLUN fb;	   // Size of largest flash block (2048 bytes)
+	uint8_t*	base;  // Flash block base address
+	uint8_t*	end;   // Flash block end address + 1
+	uint8_t*	p;     // Byte pointer in flash block
+	uint16_t	sw;    // Write switch: 0 = skip, 1 = write, 2 = erase and write
 };
 
 static struct FLBLKBUF flblkbuff;	// Flash block buffer
@@ -101,6 +101,20 @@ uint8_t ldr_phase = 0;
 static void can_msg_put(struct CANRCVBUF* pcan)
 {
 	can_driver_put(pctl0, pcan, 4, 0);
+}
+/******************************************************************************
+ * void sendcanCMD_PAY1(uint8_t cmd,uint8_t pay1);
+ * @brief	: send a CAN msg with a command byte and status type byte
+ * @param	: cmd = command code 
+ * @param   : pay1 = .cd.uc[1] byte associated with the command code
+ ******************************************************************************/
+void sendcanCMD_PAY1(uint8_t cmd,uint8_t pay1)
+{
+	can_msg_cmd.cd.uc[0] = cmd;
+	can_msg_cmd.cd.uc[1] = pay1;
+	can_msg_cmd.dlc = 2;
+	can_msg_put(&can_msg_cmd);
+	return;
 }
 /******************************************************************************
  * static void sendcanCMD(uint8_t cmd);
@@ -776,6 +790,10 @@ INSERT INTO CMD_CODES  VALUES ('CMD_CMD_SYS_RESET_EXT',168,	'0xA8: [0] Extend cu
 	case CMD_CMD_SYS_RESET_EXT: // Extend loader wait timeout (for "all")
 		can_waitdelay_ct = (DTWTIME + (p->cd.uc[1]+1)*(SYSCLOCKFREQ/10));
 		break;
+
+	case CMD_CMD_HEARTBEAT:
+printf("LOOPBACK?  %08X\n\r",(unsigned int)p->id);	
+		break;		
 
 	default:		// Not a defined command
 		err_bogus_cmds_cmds += 1;

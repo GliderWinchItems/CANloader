@@ -71,6 +71,7 @@ uint64_t binchksum;
 uint32_t* papp_crc;
 uint32_t* papp_chk;
  uint8_t apperr;
+ uint8_t waitctr;
 
 unsigned int ck; 
 uint32_t chkctr;
@@ -297,7 +298,7 @@ int main(void)
 //  uint32_t flashincrement = SYSCLOCKFREQ/6;
 
   // for debug multipy the increment to give the hapless Op time to think
-  can_waitdelay_ct = (DTWTIME + 5*SYSCLOCKFREQ); // Set number secs to wait before jumping to app
+  can_waitdelay_ct = (DTWTIME + 1*SYSCLOCKFREQ); // Time duration between heartbeat CAN msgs while waiting
 
 //  printf("\n\r\nAddresses: &__appjump %08X   __appjump %08X\n\r",(unsigned int)&__appjump, (unsigned int)__appjump);
 
@@ -375,6 +376,7 @@ int main(void)
   }
 
   HAL_CAN_Start(&hcan1); // CAN1
+  waitctr = 0;
 
   /* USER CODE END 2 */
 
@@ -411,24 +413,36 @@ int main(void)
     { // Here, we haven't done anything to disturb the integrity of the app
       if (  ((int)can_waitdelay_ct - (int)(DTWTIME)) < 0 )
       { // We timed out.
-        if (apperr != 0)
-        { // Here app does not pass checks: jump address, crc and/or checksum mismatch
-//          printf("\n\r\n#### At offset %08X address %08X is bogus ####\n\r\n",(unsigned int)&__appjump, (unsigned int)__appjump);
- //         dtw = (DTWTIME + (SYSCLOCKFREQ/2)); // Wait 1/2 sec for printf to complete
-   //       while (  ((int)dtw - (int)(DTWTIME)) > 0 );
-          system_reset(); // Software reset
+        can_waitdelay_ct = (DTWTIME + 1*SYSCLOCKFREQ);
+        waitctr += 1;
+        if (waitctr < 15)
+        { // Here, send a heartbeat CAN msg with status
+printf("wait %d:",(unsigned int)waitctr);
+          sendcanCMD_PAY1(CMD_CMD_HEARTBEAT,apperr);
         }
-        dtw = (DTWTIME + (SYSCLOCKFREQ/2)); // Wait 1/2 sec for printf to complete
-        while (  ((int)dtw - (int)(DTWTIME)) > 0 );
-        /* Set Indpendent Watch Dog and let it cause a reset. */
-        RCC->CSR |= (1<<0);   // LSI enable, necessary for IWDG
-        while ((RCC->CSR & (1<<1)) == 0);  // wait till LSI is ready
-          IWDG->KR  = 0x5555; // enable write to PR, RLR
-          IWDG->PR  = 0;      // Init prescaler
-          IWDG->RLR = 0x02;   // Init RLR
-          IWDG->KR  = 0xAAAA; // Reload the watchdog
-          IWDG->KR  = 0xCCCC; // Start the watchdog
-        while (1==1);
+        else
+        { // Here, timed out. Either jump to app, or reset
+          if (apperr != 0)
+          { // Here app does not pass checks: jump address, crc and/or checksum mismatch
+  //          printf("\n\r\n#### At offset %08X address %08X is bogus ####\n\r\n",(unsigned int)&__appjump, (unsigned int)__appjump);
+   //         dtw = (DTWTIME + (SYSCLOCKFREQ/2)); // Wait 1/2 sec for printf to complete
+     //       while (  ((int)dtw - (int)(DTWTIME)) > 0 );
+            system_reset(); // Software reset
+            // system_reset never returns
+          }
+          // Here, no apperr.
+          dtw = (DTWTIME + (SYSCLOCKFREQ/2)); // Wait 1/2 sec for printf to complete
+          while (  ((int)dtw - (int)(DTWTIME)) > 0 );
+          /* Set Indpendent Watch Dog and let it cause a reset. */
+          RCC->CSR |= (1<<0);   // LSI enable, necessary for IWDG
+          while ((RCC->CSR & (1<<1)) == 0);  // wait till LSI is ready
+            IWDG->KR  = 0x5555; // enable write to PR, RLR
+            IWDG->PR  = 0;      // Init prescaler
+            IWDG->RLR = 0x02;   // Init RLR
+            IWDG->KR  = 0xAAAA; // Reload the watchdog
+            IWDG->KR  = 0xCCCC; // Start the watchdog
+          while (1==1);
+        }
       }
     }         
   }
