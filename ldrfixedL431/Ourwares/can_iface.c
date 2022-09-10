@@ -80,6 +80,7 @@ static uint8_t canmsg_compress(struct CANRCVBUF *pcan, CAN_RxHeaderTypeDef *phal
 	    Other CANIDs below are common to all units.*/
 	if ((pcan->id == I_AM_CANID )   ||
 	    (pcan->id == CANID_ALL_PC)  ||
+	(pcan->id == 0xB0200000) ||
 	    (pcan->id == CANID_ALL_OTH) )
 	{ // Here, this CAN msg is for us
 		pcan->id |=  phal->RTR;
@@ -592,7 +593,7 @@ if (pctl == NULL) morse_trap (557);
 		if (ret == HAL_OK)
 		{
 			/* Setup msg with pctl for our format */
-			ncan.pctl = pctl;
+			ncan.pctl = pctl;			
 			if (canmsg_compress(&ncan.can, &header, &data[0]))
 			{
 				/* Place on queue for Mailbox task to filter, distribute, notify, etc. */

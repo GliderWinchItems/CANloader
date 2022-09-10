@@ -128,7 +128,7 @@ C_DEFS =  \
 -DUSE_HAL_DRIVER \
 -DSTM32L431xx
 
-C_DEFS += -DI_AM_CANID
+C_DEFS += -DI_AM_CANID=$(I_AM_CANID)
 
 
 # AS includes

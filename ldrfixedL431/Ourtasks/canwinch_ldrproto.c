@@ -45,11 +45,16 @@ Plus unknown amount of write flash time.
 #include "DTW_counter.h"
 #include "crc-32_hw.h"
 
-
+extern uint32_t dtwmsnext; // DTW time ct for squelching
 extern struct CAN_CTLBLOCK* pctl1;
 extern struct CAN_CTLBLOCK* pctl0; // Pointer to CAN1 control block
 
 static unsigned int debugPctr = 0;
+
+/* Milliseconds that prevents loop in main from jumping to app. */
+uint32_t dtwmsnext;
+int32_t squelch_ms;
+uint8_t squelch_flag; // 0 = no squelching in effct; 1 = squelch HB and app jump
 
 /* Address pointer for storing incoming data */
 uint8_t *padd;		// Points to any address that is reasonable--working address
@@ -779,6 +784,12 @@ INSERT INTO CMD_CODES  VALUES ('CMD_CMD_SYS_RESET_EXT',168,	'0xA8: [0] Extend cu
 		system_reset();
 		break;
 
+	case LDR_SQUELCH: // No heartbeat nor program jump delay
+		squelch_ms = p->cd.ui[1]; 
+		squelch_flag = 1;
+		dtwmsnext = DTWTIME + SYSCLOCKFREQ/100000;
+		break;		
+
 	case CMD_CMD_SYS_RESET_CID:	// Reset cmd is only of "us"
 		x = *(uint32_t*)&p->cd.uc[4];
 		if (x == p->id)
@@ -797,12 +808,13 @@ printf("LOOPBACK?  %08X\n\r",(unsigned int)p->id);
 
 	default:		// Not a defined command
 		err_bogus_cmds_cmds += 1;
-printf("BOGUS CMD CODE: %X %08X %X  %08X %08X\n\r",
+printf("BOGUS CMD CODE: %X %08X %X",
 	(unsigned int)p->cd.uc[0], 
 	(unsigned int)p->id, 
-	(unsigned int)p->dlc, 
-	(unsigned int)p->cd.ui[0], 
-	(unsigned int)p->cd.ui[1]);
+	(unsigned int)p->dlc);
+for (int i= 0; i < p->dlc; i++) printf(" %02X",(unsigned int)p->cd.uc[i]);
+printf("\n\r");
+
 		break;
 	}
 	return;
@@ -817,7 +829,6 @@ static struct CANTAKEPTR* ptake;
 void canwinch_ldrproto_poll(void)
 {
 	struct CANRCVBUF can;
-
 	if (sw_oto == 0)
 	{
 		sw_oto = 1;
@@ -835,6 +846,8 @@ void canwinch_ldrproto_poll(void)
 			ptake->ptake = ptake->pcir->pbegin;
 
 		/* Do something! */
+//		if (can.id == CANID_UNI_BMS_PC_I)
+printf("0x%08X\n\r",(unsigned int)can.id);
 		do_cmd_cmd(&can);		// Execute command
 	}
 

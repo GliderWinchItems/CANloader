@@ -70,8 +70,13 @@ struct CAN_CTLBLOCK* pctl1;
 uint64_t binchksum;
 uint32_t* papp_crc;
 uint32_t* papp_chk;
+uint32_t waitctr;
  uint8_t apperr;
- uint8_t waitctr;
+
+ /* Milliseconds that prevents loop in main from jumping to app. */
+extern int32_t squelch_ms;
+extern uint8_t squelch_flag;
+extern uint32_t dtwmsnext;
 
 unsigned int ck; 
 uint32_t chkctr;
@@ -190,7 +195,10 @@ int main(void)
   /* USER CODE BEGIN 2 */
   DTW_counter_init();
 
-   printf("\n\n\n\r######### ldrfixedL431 STARTS");
+  /* CAN ID for this node is passed in to make from command line. */
+  unsigned int i_am_canid = I_AM_CANID;
+
+   printf("\n\n\n\r######### ldrfixedL431 STARTS, 0x%0X",i_am_canid);
 
 /* Setup TX linked list for CAN  */
    // CAN1 (CAN_HandleTypeDef *phcan, uint8_t canidx, uint16_t numtx, uint16_t numrx);
@@ -389,6 +397,17 @@ int main(void)
     /* USER CODE BEGIN 3 */
 //    HAL_Delay(1000);
 
+    /* Time how long squelch will be in effect. */
+    if ((squelch_flag != 0) && ((int32_t)(DTWTIME - dtwmsnext) > 0))
+    { // Here, CAN msg set squelch and time duration
+      dtwmsnext += SYSCLOCKFREQ/10; // 100 ms steps
+      squelch_ms -= 100;
+      if (squelch_ms <= 0)
+      {
+        squelch_flag = 0;
+      }
+    }
+
     if ((int32_t)(DTWTIME - DTW_next_printf) > 0)
     {
       DTW_next_printf = DTW_next_printf + DTW_INC_printf;
@@ -418,11 +437,14 @@ int main(void)
         if (waitctr < 15)
         { // Here, send a heartbeat CAN msg with status
 printf("wait %d:",(unsigned int)waitctr);
-          sendcanCMD_PAY1(CMD_CMD_HEARTBEAT,apperr);
+          if (squelch_flag == 0)
+          {
+            sendcanCMD_PAY1(CMD_CMD_HEARTBEAT,apperr);
+          }
         }
         else
         { // Here, timed out. Either jump to app, or reset
-          if (apperr != 0)
+          if ((apperr != 0) && (squelch_flag == 0))
           { // Here app does not pass checks: jump address, crc and/or checksum mismatch
   //          printf("\n\r\n#### At offset %08X address %08X is bogus ####\n\r\n",(unsigned int)&__appjump, (unsigned int)__appjump);
    //         dtw = (DTWTIME + (SYSCLOCKFREQ/2)); // Wait 1/2 sec for printf to complete
