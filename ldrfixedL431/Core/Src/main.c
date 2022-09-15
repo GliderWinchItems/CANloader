@@ -329,7 +329,7 @@ int main(void)
     }
     else
     {
-//     printf("App addr   crc: %08X App crc  %08X\n\r",(unsigned int)papp_crc,*(unsigned int*)papp_crc);
+     printf("App addr   crc: %08X App crc  %08X\n\r",(unsigned int)papp_crc,*(unsigned int*)papp_crc);
     }
     
     papp_chk =  (uint32_t*)(*(uint32_t**)(papp_entry-1)+1);
@@ -339,7 +339,7 @@ int main(void)
     }
     else
     {
- //     printf("App addr   chk: %08X App chk  %08X\n\r",(unsigned int)papp_chk,*(unsigned int*)papp_chk);
+      printf("App addr   chk: %08X App chk  %08X\n\r",(unsigned int)papp_chk,*(unsigned int*)papp_chk);
     }
   }
   if (apperr == 0)
@@ -434,7 +434,7 @@ int main(void)
       { // We timed out.
         can_waitdelay_ct = (DTWTIME + 1*SYSCLOCKFREQ);
         waitctr += 1;
-        if (waitctr < 15)
+        if (waitctr < 5)
         { // Here, send a heartbeat CAN msg with status
 printf("wait %d:",(unsigned int)waitctr);
           if (squelch_flag == 0)
