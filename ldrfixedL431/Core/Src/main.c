@@ -64,6 +64,7 @@ struct CAN_CTLBLOCK* pctl1;
  uint32_t flashblocksize1;
  uint32_t unique_id[3];
  uint32_t can_waitdelay_ct;
+ uint32_t end_flash;
  uint16_t flashsize;
  uint8_t ldr_phase;
 
@@ -287,8 +288,11 @@ int main(void)
   unique_id[1] = *(uint32_t*)(ADDR_UNIQUE_ID+1);
   unique_id[2] = *(uint32_t*)(ADDR_UNIQUE_ID+2);
   flashsize = *(uint16_t*)ADDR_FLASH_SIZE;
+  end_flash = flashsize*1024 + 0x08000000;
   printf("\n\rUnique ID : %08X%08X%08X",(unsigned int)unique_id[0],(unsigned int)unique_id[1],(unsigned int)unique_id[2]);
   printf("\n\rFlash size:     %uK\n\r",(unsigned int)flashsize);
+  printf("\n\rEnd addr  :    0x%08X end_flash\n\r",(unsigned int)end_flash);
+
 
   /* ----------------------- Header for columns of CAN error printf ------------------------------------- */
 //canwinch_pod_common_systick2048_printerr_header();
@@ -308,19 +312,23 @@ int main(void)
   // for debug multipy the increment to give the hapless Op time to think
   can_waitdelay_ct = (DTWTIME + 1*SYSCLOCKFREQ); // Time duration between heartbeat CAN msgs while waiting
 
-//  printf("\n\r\nAddresses: &__appjump %08X   __appjump %08X\n\r",(unsigned int)&__appjump, (unsigned int)__appjump);
+ // printf("\n\r\nAddresses: &__appjump %08X   __appjump %08X\n\r",(unsigned int)&__appjump,(unsigned int)__appjump);
 
   /* ----------------- CRC|checksum check of application. ---------------------------------- */
   // Get addresses
-
-  uint32_t* papp_entry = (uint32_t*)((uint32_t)(*(uint32_t**)0x08008004) & ~1L);
+  unsigned int app_entry_tmp = (unsigned int)__appjump & ~1L;
+//  printf("app_entry_tmp: %08X\n\r",app_entry_tmp);
+//  uint32_t* papp_entry = (uint32_t*)((uint32_t)(*(uint32_t**)__appjump) & ~1L);
+  uint32_t* papp_entry = (uint32_t*)app_entry_tmp;
   if ((papp_entry >= (uint32_t*)(BEGIN_FLASH + (flashsize*1024))) || (papp_entry < (uint32_t*)BEGIN_FLASH))
   { // Here bogus address (which could crash processor)
     apperr |= APPERR_APP_ENTRY_OOR;
+//    printf("papp_entry err: %08X %08X %08X\n\r",(unsigned int)papp_entry,(unsigned int)(BEGIN_FLASH + (flashsize*1024)),
+//      (unsigned int)BEGIN_FLASH);
   }
   else
   {
- //   printf("App addr entry: %08X\n\r",(unsigned int)papp_entry);
+    printf("App addr entry: %08X\n\r",(unsigned int)papp_entry);
     
     papp_crc = *(uint32_t**)(papp_entry-1);
     if ((papp_crc >= (uint32_t*)(BEGIN_FLASH + (flashsize*1024))) || (papp_crc < (uint32_t*)BEGIN_FLASH))
@@ -364,9 +372,9 @@ int main(void)
     binchksum = (binchksum & 0xffffffff) + tmp;
     tmp  = (binchksum >> 32);
     binchksum = (binchksum & 0xffffffff) + tmp;
- //   printf("CHK CTR: 0x%08X %d\n\r",(unsigned int)chkctr,(unsigned int)chkctr);
+//    printf("CHK CTR: 0x%08X %d\n\r",(unsigned int)chkctr,(unsigned int)chkctr);
   }
- // printf("checksum: 0x%08X CRC-32: 0x%08X\n\r",(unsigned int)binchksum,ck);
+// printf("checksum: 0x%08X CRC-32: 0x%08X\n\r",(unsigned int)binchksum,ck);
 
 //  uint32_t hwcrc = rc_crc32_hw((uint32_t*)BEGIN_FLASH, chkctr/4);
 //  printf("hw  crc: 0x%08X\n\r",~(unsigned int)hwcrc);
@@ -425,7 +433,7 @@ int main(void)
     }
 
     /* Do loader'ing, if there are applicable msgs. */
-    canwinch_ldrproto_poll();
+//    canwinch_ldrproto_poll();
 
     /* Have we written to flash?  If so, don't jump to the the app unless commanded. */
     if (ldr_phase == 0)

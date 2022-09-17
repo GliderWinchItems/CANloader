@@ -29,6 +29,6 @@ void system_reset(void)
 */
 //	SCB_AIRCR = (0x5FA << 16) | SCB_AIRCR_SYSRESETREQ;	// Cause a RESET
       #define SCB_AIRCR 0xE000ED0C
-	*(unsigned int*)SCB_AIRCR = (0x5FA << 16) | 0x4;	// Cause a RESET
+	*(volatile unsigned int*)SCB_AIRCR = (0x5FA << 16) | 0x4;	// Cause a RESET
 	while (1==1);
 }

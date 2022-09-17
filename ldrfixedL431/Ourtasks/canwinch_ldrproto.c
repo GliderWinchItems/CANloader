@@ -45,11 +45,16 @@ Plus unknown amount of write flash time.
 #include "DTW_counter.h"
 #include "crc-32_hw.h"
 
+extern void* __appoffset; // App load adddres: Defined in ldr.ld file
+
 extern uint32_t dtwmsnext; // DTW time ct for squelching
 extern struct CAN_CTLBLOCK* pctl1;
 extern struct CAN_CTLBLOCK* pctl0; // Pointer to CAN1 control block
 
-static unsigned int debugPctr = 0;
+extern unsigned int ck;
+extern uint64_t binchksum;
+
+static unsigned int debugPctr;
 
 /* Milliseconds that prevents loop in main from jumping to app. */
 uint32_t dtwmsnext;
@@ -59,10 +64,10 @@ uint8_t squelch_flag; // 0 = no squelching in effct; 1 = squelch HB and app jump
 /* Address pointer for storing incoming data */
 uint8_t *padd;		// Points to any address that is reasonable--working address
 uint8_t *padd_start;		// Points to any address that is reasonable--address received
-uint32_t sw_padd = 0;	// 0 = address needs to be set before storing; 1 = OK to store
-uint32_t err_bogus_cmds = 0;	// Counter for commands not classified
-uint32_t err_bogus_cmds_cmds = 0; // Counter for Command code undefined
-uint32_t err_novalidadd = 0;	// Counter for data msg with no valid address
+uint32_t sw_padd;	// 0 = address needs to be set before storing; 1 = OK to store
+uint32_t err_bogus_cmds;	// Counter for commands not classified
+uint32_t err_bogus_cmds_cmds; // Counter for Command code undefined
+uint32_t err_novalidadd;	// Counter for data msg with no valid address
 uint8_t* flash_hi; 		// Highest flash address
 
 #define LARGESTFLBLK	512	// Flash block size (4 byte words)
@@ -78,11 +83,12 @@ union FLUN	// Assure aligment, etc.
 
 struct FLBLKBUF	// Working pointers and counts accompanying data for block
 {
-	union FLUN fb;	   // Size of largest flash block (2048 bytes)
-	uint8_t*	base;  // Flash block base address
-	uint8_t*	end;   // Flash block end address + 1
-	uint8_t*	p;     // Byte pointer in flash block
-	uint16_t	sw;    // Write switch: 0 = skip, 1 = write, 2 = erase and write
+	union FLUN fb; // Size of largest flash block (2048 bytes)
+	uint32_t reqn; // Number of bytes to request 
+	uint8_t* base; // Flash block base address
+	uint8_t*  end; // Flash block end address + 1
+	uint8_t*    p; // Working byte pointer within flash block
+	uint16_t   sw; // Write switch: 0 = skip, 1 = write, 2 = erase and write
 };
 
 static struct FLBLKBUF flblkbuff;	// Flash block buffer
@@ -165,18 +171,18 @@ void canwinch_ldrproto_init(uint32_t iamunitnumber)
 
 	flbblkbuff_init(); // Set initial pointer.
 
+printf("FLASH HI ADDR: 0x%08X flash_hi\n\r",(unsigned int)flash_hi);
 printf("FLASH BLK SZE: %dB\n\r",(unsigned int)flashblocksize);
-printf("FLASH HI ADDR: 0x%08X\n\r",(unsigned int)flash_hi);
 
 	/* Set fixed part of CAN msgs */
 	can_msg_cmd.id = iamunitnumber; // Command
 	can_msg_rd.id  = iamunitnumber; // Read
 	can_msg_wr.id  = iamunitnumber; // Write
 
-printf("CAN ID's\n\r");
-printf( "CMD: %08X\n\r",(unsigned int)can_msg_cmd.id);
-printf( "RD : %08X\n\r",(unsigned int)can_msg_rd.id);
-printf( "WR : %08X\n\r",(unsigned int)can_msg_wr.id);
+//printf("CAN ID's\n\r");
+//printf( "CMD: %08X\n\r",(unsigned int)can_msg_cmd.id);
+//printf( "RD : %08X\n\r",(unsigned int)can_msg_rd.id);
+//printf( "WR : %08X\n\r",(unsigned int)can_msg_wr.id);
 
 	return;
 }
@@ -288,14 +294,14 @@ static void copypayload(uint8_t* pc, int8_t count)
  * @param	: Address pointer
  * @return	: 0 = OK, not zero = bad
  * ************************************************************************************** */
-int addressOK(uint8_t* pa)
-{
-	uint32_t p;
-	if ( ((uint32_t)pa > 0x1FFFE000) && ((uint32_t)pa <= 0x1FFFF80F) ) return 0; // Information block
-	if (  (uint32_t)pa < 0x08000000) return -1;	// Return below any flash
-	p = *(uint32_t*)0x1FFFF7E0;			// Get size of flash in Kbytes
-	p = (p << 10); 				// Multiply by 1024 (K)
-	if ((uint32_t)pa > p) return -1;		// Above flash for this part
+ int addressOK(uint8_t* pa)
+{	
+	if ((uint32_t)pa < (uint32_t)__appoffset)
+		return -1;
+	else if ((uint32_t)pa >= (uint32_t)flash_hi)
+	{
+		return -2;
+	}
 	return 0;
 }
 /* **************************************************************************************
@@ -339,21 +345,22 @@ printf("wrblk: default: %d\n\r",(unsigned int)flblkbuff.sw);
  * ************************************************************************************** */
 static void flashblockinit(void)
 {
-	uint64_t* pt1;	// Beginning address of flash block
-	uint64_t* pt2;	// Beginning address of RAM buff
-	uint64_t* ptend;	// End+1 of RAM buff
+	uint64_t* pt1;   // Beginning address of flash block
+	uint64_t* pt2;   // Beginning address of RAM buff
+	uint64_t* ptend; // End+1 of RAM buff
 
 	/* Load block that padd points to into RAM. */
-	pt1 = (uint64_t*)((uint32_t)(padd) & ~(flashblocksize - 1)); 	// Block addr of STM32 memory to be loaded
-	flblkbuff.base = (uint8_t*)pt1;				// Pointer to beginning of flash block
-	flblkbuff.end = flblkbuff.base + flashblocksize;	// End + 1
-	flblkbuff.p = &flblkbuff.fb.u8[0] + (padd - (uint8_t*)pt1); 	// Pointer to where payload begins storing
-	flblkbuff.sw = 0;					// Switch for write/erase
-	pt2 = &flblkbuff.fb.u64[0];				// RAM buffer for block
-	ptend = pt2 + (flashblocksize/sizeof(uint64_t)); 		// End+1 of RAM buffer
+	pt1 = (uint64_t*)((uint32_t)(padd) & ~(flashblocksize - 1)); // Block addr of STM32 memory to be loaded
+	flblkbuff.base = (uint8_t*)pt1; // Pointer to beginning of flash block
+	flblkbuff.end = flblkbuff.base + flashblocksize; // End of flash block buffer
+	flblkbuff.p = &flblkbuff.fb.u8[0] + (padd - (uint8_t*)pt1); // Pointer to where payload begins storing
+	flblkbuff.sw = 0;				// Reset switch for write/erase
+	pt2 = &flblkbuff.fb.u64[0];		// RAM buffer for block
+	ptend = pt2 + (flashblocksize/sizeof(uint64_t)); // End+1 of sram buffer
 //printf("P0: %X %X %X\n\r",pt1, pt2, ptend);
-	while (pt2 < ptend) *pt2++ = *pt1++; 			// Copy flash to RAM buffer
+	while (pt2 < ptend) *pt2++ = *pt1++; // Copy flash to RAM buffer
 //printf("P1: %X %X %X\n\r",pt1, pt2, ptend);
+	flblkbuff.reqn = (uint32_t)ptend - (uint32_t)flblkbuff.p; // Request number of bytes to complete this flash block.
 	return;
 }
 /* **************************************************************************************
@@ -452,53 +459,32 @@ void do_wrblk(struct CANRCVBUF* pcan)
 }
 /* **************************************************************************************
  * void do_crc(struct CANRCVBUF* p);
- * @brief	: Compute CRC and send it back
- * @param	: Point to message buffer holding the precious command
+ * @brief	: Send CRC computed when 'main.c' started
+ * @param	: p = pointer to message buffer holding the precious command
  * ************************************************************************************** */
 void do_crc(struct CANRCVBUF* p)
 {
-	uint32_t pstart;
-	uint32_t count;
-	uint32_t crc32;
-
-	/* Check that the payload is the correct size: start|end addresses */
-	if ((p->dlc & 0x0f) != 8)
-	{ // Send NACK
-printf("Send NACK: dlc not 8: %d\n\r",(unsigned int)p->dlc);
-		 return;
-	}
-	/* Get start and end addresses from payload */
-	count  = (p->cd.ui[0] >> 8);		// Number of bytes to check
-	count  &= 0x000fffff; 	// Limit the size
-	pstart = p->cd.ui[1];	// Address to start
-
-	
-	/* Check that we are dealing with valid start address and count */
-	extern uint8_t* __appoffset;	// Origin of application define in .ld file
-	if ((pstart < (uint32_t)(&__appoffset)) || ((uint32_t)(&__appoffset + count) > (uint32_t)flash_hi)) 
-	{ // Send NACK
-printf("Send NACK start addr out of range: %08X %X %08X %08X\n\r",
-	(unsigned int)pstart, 
-	(unsigned int)count,
-	(unsigned int)(&__appoffset + count), 
-	(unsigned int)flash_hi);
-		return;
-	}
-
-if ( (pstart < (uint32_t)0x08004000) ||  ( (pstart + count) > (uint32_t)0x08100000) )
-   {printf("Hard Coded address check out-of-range:"); return;}
-
-printf("rc_crc32: %08X %08X %08X\n\r",(unsigned int)pstart, (unsigned int)(pstart+count), (unsigned int)count);
-	/* Compute the crc and place in msg to be returned. */
-	crc32 = rc_crc32_hw((uint32_t*)pstart, (count/3) );
-printf("Send crc-32: %08X\n\r",(unsigned int)crc32);
-
 	// Return msg with crc
 	p->dlc = 8;
-	p->cd.ui[1] = crc32;
+	p->cd.ui[0] = 0; // Clear [0]-[3]
 	p->cd.uc[0] = LDR_CRC;
+	p->cd.ui[1] = ck;   // Send CRC [4]-[7]
 	can_msg_put(p);		// Place in CAN output buffer
-
+	return;
+}
+/* **************************************************************************************
+ * void do_chksum(struct CANRCVBUF* p);
+ * @brief	: Send checksum computed when 'main.c' started
+ * @param	: p = pointer to CAN msg 
+ * ************************************************************************************** */
+void do_chksum(struct CANRCVBUF* p)
+{
+	// Return msg with crc
+	p->dlc = 8;
+	p->cd.ui[0] = 0; // Clear [0]-[3]
+	p->cd.uc[0] = LDR_CHKSUM;
+	p->cd.ui[1] = (uint32_t)binchksum;   // Send CRC [4]-[7]
+	can_msg_put(p);		// Place in CAN output buffer
 	return;
 }
 /* **************************************************************************************
@@ -510,30 +496,35 @@ void do_set_addr(struct CANRCVBUF* p)
 {
 	uint8_t* ptmp;
 
-	if ((p->dlc & 0x0f) == 5) // Payload size: cmd byte + 4 byte address
+	if ((p->dlc & 0x0f) == 8) // Payload size: cmd byte + 4 byte address
 	{ // 
-ldr_phase |= 0x1; // Stop ldr.c from jumping to the app.
-		ptmp = (uint8_t*)mv4(&p->cd.uc[1]);	// Extract address from payload
+//ldr_phase |= 0x1; // Stop ldr.c from jumping to the app.
+		ptmp = (uint8_t*)mv4(&p->cd.uc[4]);	// Extract address from payload
 		if (addressOK(ptmp) == 0)	// Valid STM32 address?
 		{ // Here, yes.  It shouldn't cause a memory fault
-			p->cd.uc[1] = LDR_ACK;	// Show it passed all checks
 			padd = ptmp;		// Save working pointer
 			padd_start = padd;	// Save start
 			sw_padd = 1;		// Show it was "recently set"			
 			flashblockinit();	//Load block that padd points to into RAM.
-			p->cd.uc[1] = LDR_ACK;
+			p->cd.uc[0] = LDR_ACK;
 debugPctr = 0;
 		}
 		else
-			p->cd.uc[1] = LDR_ADDR_OOB; // Failed the address check					
+		{ // Here, address failed out-of-bounds check
+			p->cd.uc[0] = LDR_ADDR_OOB; // Failed the address check
+printf("OK? %d %08X %08X\n\r",(int)addressOK(ptmp),(unsigned int)ptmp,(unsigned int)__appoffset);			
+//morse_trap(22);
+		}
 	}
 	else
 	{ // Here, dlc size wrong
 		sw_padd = 0;	// Don't be storing stuff in bogus addresses
-		p->cd.uc[1] = LDR_DLC_ERR;			
+		p->cd.uc[0] = LDR_DLC_ERR;			
 	}
 	/* Send response */
-	p->dlc = 2;
+	p->cd.uc[1] = 0; // Untag byte set by PC.
+	p->cd.ui[1] = (uint32_t)flblkbuff.reqn; // Request bytes (if applicable)
+	p->dlc = 8;
 	can_msg_put(p);	// Place in CAN output buffer
 	return;
 }
@@ -626,7 +617,6 @@ printf("send4: %X %X %X %X %X %X\n\r", (unsigned int)n,
  * @brief	: Return msg number of crc blocks, and address to array of blocks
  * @param	: p = pointer to message buffer holding the imperial command
  * ************************************************************************************** */
-extern uint8_t* __appoffset;
 extern uint8_t* __highflashp;
 
 void do_getflashpaddr(struct CANRCVBUF* p)
@@ -722,6 +712,9 @@ INSERT INTO CMD_CODES  VALUES ('CMD_CMD_SYS_RESET_EXT',168,	'0xA8: [0] Extend cu
 		do_set_addr(p);
 		break;
 
+	case LDR_SET_ADDR_FL:
+		do_set_addr(p);
+
 	case LDR_ACK:		// ACK: Positive acknowledge
 		break;
 
@@ -798,6 +791,10 @@ INSERT INTO CMD_CODES  VALUES ('CMD_CMD_SYS_RESET_EXT',168,	'0xA8: [0] Extend cu
 		}
 		break;
 
+	case LDR_CHKSUM:
+		do_chksum(p);
+		break;		
+
 	case CMD_CMD_SYS_RESET_EXT: // Extend loader wait timeout (for "all")
 		can_waitdelay_ct = (DTWTIME + (p->cd.uc[1]+1)*(SYSCLOCKFREQ/10));
 		break;
@@ -847,7 +844,9 @@ void canwinch_ldrproto_poll(void)
 
 		/* Do something! */
 //		if (can.id == CANID_UNI_BMS_PC_I)
-printf("0x%08X\n\r",(unsigned int)can.id);
+printf("\n\r# Rcv: 0x%08X %d",(unsigned int)can.id,(unsigned int)can.dlc);
+for (int m = 0; m<can.dlc; m++)printf(" %02X",(unsigned int)can.cd.uc[m]);
+
 		do_cmd_cmd(&can);		// Execute command
 	}
 
