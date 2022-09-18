@@ -37,8 +37,8 @@ extern "C" {
 #define ADDR_UNIQUE_ID  0x1FFF7590
 #define SYSCLOCKFREQ 16000000  
 
-#define BEGIN_FLASH 0x08008000
-#define APP_JMPADDR 0x08008004
+#define BEGIN_FLASH 0x08008000 // Application's flash start address
+#define APP_JMPADDR 0x08008004 // Location of application's jump address
 
 #define APPERR_APP_ENTRY_OOR (1 << 0) // App out-of-range address: entry
 #define APPERR_APP_CRC_ADDR  (1 << 1) // App out-of-range address: crc
