@@ -54,7 +54,7 @@ extern struct CAN_CTLBLOCK* pctl0; // Pointer to CAN1 control block
 extern unsigned int ck;
 extern uint64_t binchksum;
 
-#define UI unsigned int
+#define UI unsigned int // Cast for eliminating printf warnings
 
 static unsigned int debugPctr;
 
@@ -108,8 +108,10 @@ static struct CANRCVBUF can_msg_wr;	// Write
 /* Switch that shows if we have a program loading underway and should not jump to an app */
 uint8_t ldr_phase = 0;
 
+//static uint32_t crc_nib; // Debug compare to hw
 static uint32_t buildword;
 static uint8_t buildword_ct;
+static uint32_t bldct;
 /******************************************************************************
  * static void build_chks(uint8_t n);
  * @brief	: Build CRC-32 and checksum from four byte words
@@ -118,13 +120,15 @@ static uint8_t buildword_ct;
 static void build_chks(uint8_t n)
 {
 	buildword |= (n << buildword_ct);
-	buildword_ct += 1;
-	if (buildword_ct > 3)
+	buildword_ct += 8;
+	if (buildword_ct > (3*8))
 	{
-		buildword_ct = 0;
 		*(__IO uint32_t*)CRC_BASE = buildword; 
-      	binchksum += buildword;
-      	buildword = 0;
+//crc_nib = crc_32_nib_acc(crc_nib, buildword);	// Debug compare to hw
+      	binchksum   += buildword;
+      	buildword    = 0;
+      	buildword_ct = 0;
+bldct += 1;      	
 	}
 	return;
 }
@@ -195,8 +199,8 @@ void canwinch_ldrproto_init(uint32_t iamunitnumber)
 
 	flbblkbuff_init(); // Set initial pointer.
 
-printf("FLASH HI ADDR: 0x%08X flash_hi\n\r",(unsigned int)flash_hi);
-printf("FLASH BLK SZE: %dB\n\r",(unsigned int)flashblocksize);
+printf("FLASH HI ADDR: 0x%08X flash_hi\n\r",(UI)flash_hi);
+printf("FLASH BLK SZE: %dB\n\r",(UI)flashblocksize);
 
 	/* Set fixed part of CAN msgs */
 	can_msg_cmd.id = iamunitnumber; // Command
@@ -204,9 +208,9 @@ printf("FLASH BLK SZE: %dB\n\r",(unsigned int)flashblocksize);
 	can_msg_wr.id  = iamunitnumber; // Write
 
 //printf("CAN ID's\n\r");
-//printf( "CMD: %08X\n\r",(unsigned int)can_msg_cmd.id);
-//printf( "RD : %08X\n\r",(unsigned int)can_msg_rd.id);
-//printf( "WR : %08X\n\r",(unsigned int)can_msg_wr.id);
+//printf( "CMD: %08X\n\r",(UI)can_msg_cmd.id);
+//printf( "RD : %08X\n\r",(UI)can_msg_rd.id);
+//printf( "WR : %08X\n\r",(UI)can_msg_wr.id);
 
 	return;
 }
@@ -334,11 +338,11 @@ static void copypayload(uint8_t* pc, int8_t count)
  * ************************************************************************************** */
 static void wrblk(struct CANRCVBUF* pcan)
 {
-printf("wrblk: %d %X %X %08X %08X\n\r",(unsigned int)debugPctr, 
-	(unsigned int)padd, 
-	(unsigned int)pcan->dlc, 
-	(unsigned int)pcan->cd.ui[0], 
-	(unsigned int)pcan->cd.ui[1]);
+printf("wrblk: %d %X %X %08X %08X\n\r",(UI)debugPctr, 
+	(UI)padd, 
+	(UI)pcan->dlc, 
+	(UI)pcan->cd.ui[0], 
+	(UI)pcan->cd.ui[1]);
 
 	switch (flblkbuff.sw) 
 	{
@@ -356,10 +360,10 @@ printf("wrblk: CASE 2: erase block before writing\n\r");
 printf("wrblk: CASE 1: writing block\n\r");
 
 if ((can_msg_cmd.cd.uc[1] != 0) || (can_msg_cmd.cd.uc[2] != 0))
- printf("wrblk: pay[1] %X pay[2] %X\n\r",(unsigned int)can_msg_cmd.cd.uc[1], (unsigned int)can_msg_cmd.cd.uc[2]);
+ printf("wrblk: pay[1] %X pay[2] %X\n\r",(UI)can_msg_cmd.cd.uc[1], (UI)can_msg_cmd.cd.uc[2]);
 		break;	
 	default:
-printf("wrblk: default: %d\n\r",(unsigned int)flblkbuff.sw);
+printf("wrblk: default: %d\n\r",(UI)flblkbuff.sw);
 	}
 	return;
 }
@@ -395,6 +399,7 @@ printf("P0: %X %X %X\n\r",(UI)pt1,(UI)pt2,(UI)ptend);
  * @brief	: Load payload into SRAM buffer for flash image
  * @param	: p = CAN msg pointer
  * ************************************************************************************** */
+uint32_t dbgct;
 static void do_data(struct CANRCVBUF* p)
 {
 /*
@@ -410,11 +415,12 @@ sequence.
 		if (*flblkbuff.p != p->cd.uc[i])
 		{ // Here, one or more bytes have changed in flash block; erase needed
 			flblkbuff.sw = 0;
-printf("D %08X %02X %02X\n\r",(unsigned int)flblkbuff.p,(unsigned int)*flblkbuff.p,(unsigned int)p->cd.uc[i]);	
+printf(" D %08X %02X %02X\n\r",(UI)flblkbuff.p,(UI)*flblkbuff.p,(UI)p->cd.uc[i]);
+printf("(p-padd) %d dbgct %d",(UI)(flblkbuff.p-padd),(UI)dbgct);
 			*flblkbuff.p = p->cd.uc[i];	// Update sram flash image
 		}
 		build_chks(p->cd.uc[i]); // Add byte to build CRC & checksum with 32b words.
-
+dbgct += 1;
 		/* Was this the last byte of the block? */
 		flblkbuff.p += 1;
 		if (flblkbuff.p >= flblkbuff.end)
@@ -424,7 +430,6 @@ printf("D %08X %02X %02X\n\r",(unsigned int)flblkbuff.p,(unsigned int)*flblkbuff
 			/* Here next CAN msg should be a EOB or EOF. */
 			flblkbuff.eobsw = 1;
 		}
-		return;
 
 #if 0
 		if (flblkbuff.p >= flblkbuff.end)
@@ -440,7 +445,7 @@ printf("\n\rEND p %08X end %08X padd %08X sw %d diff %d\n\r",(UI)flblkbuff.p,(UI
 			flashblockinit(); // Setup for next download burst
 		}
 #endif
-		
+
 	}
 	return;
 }
@@ -459,8 +464,8 @@ static void do_eob(struct CANRCVBUF* p)
     binchksum_prev = binchksum;
 
 	/* Check that CRC's match */
-	crc = CRC->DR;
-	if (p->cd.ui[1] == ck)
+	crc = CRC->DR; // Get latest CRC
+	if (p->cd.ui[1] == crc)
 	{ // Here, our CRC matches PC's CRC
 		/* Erase and write flash block if there were changes. */
 		
@@ -477,6 +482,54 @@ static void do_eob(struct CANRCVBUF* p)
 	}
 	else
 	{ // Here, mismatch, so redo this mess. LDR_NACK
+printf("\n\rMismatch:\n\r");
+printf("LCRC   %08X CT: %d dbgct %d\n\r",(UI)crc,(UI)bldct, (UI)dbgct);
+//printf("NCRC   %08X\n\r",(UI)crc_nib);
+printf("PC CRC %08X\n\r",(UI)p->cd.ui[1]);
+printf("LCHECK %08X\n\r",(UI)binchksum);
+
+	}
+
+	return;
+}
+/* **************************************************************************************
+ * static void do_eof(struct CANRCVBUF* p);
+ * @brief	: PC says end of xbin file reached. Sending of program data complete.
+ * @param	: p = CAN msg pointer
+ * ************************************************************************************** */
+uint32_t crc;
+uint32_t crc_prev;
+uint64_t binchksum_prev;
+
+static void do_eof(struct CANRCVBUF* p)
+{
+	crc_prev = crc;
+    binchksum_prev = binchksum;
+
+	/* Check that CRC's match */
+	crc = CRC->DR; // Get latest CRC
+	if (p->cd.ui[1] == crc)
+	{ // Here, our CRC matches PC's CRC
+		/* Erase and write flash block if there were changes. */
+		
+		/* Get next flash block and send PC a byte request. LDR_ACK */
+		padd += flashblocksize;
+		flashblockinit();
+
+		/* Send response */
+		p->cd.uc[0] = LDR_ACK;
+		p->cd.uc[1] = 0; // Untag byte set by PC.
+		p->cd.ui[1] = 0xFEEDBACC; // Show we got EOB & no bytes to request
+		p->dlc = 8;
+		can_msg_put(p);	// Place in CAN output buffer
+	}
+	else
+	{ // Here, mismatch, so redo this mess. LDR_NACK
+printf("\n\rMismatch:\n\r");
+printf("LCRC   %08X CT: %d dbgct %d\n\r",(UI)crc,(UI)bldct, (UI)dbgct);
+//printf("NCRC   %08X\n\r",(UI)crc_nib);
+printf("PC CRC %08X\n\r",(UI)p->cd.ui[1]);
+printf("LCHECK %08X\n\r",(UI)binchksum);
 
 	}
 
@@ -497,14 +550,14 @@ void do_datawrite(uint8_t* pc, int8_t count,struct CANRCVBUF* p)
 	if (count > 8) 			// Return if count out of range
 	{
 		sendcanCMD(LDR_NACK);
-printf("NACK0: %d %X %d %X %08X %08X\n\r",(unsigned int)debugPctr,(unsigned int)padd, 
- (unsigned int)count,(unsigned int)p->dlc,(unsigned int)p->cd.ui[0],(unsigned int)p->cd.ui[1]);
+printf("NACK0: %d %X %d %X %08X %08X\n\r",(UI)debugPctr,(UI)padd, 
+ (UI)count,(UI)p->dlc,(UI)p->cd.ui[0],(UI)p->cd.ui[1]);
 	return;
 }
 	// Return = No valid address in place
 	if (sw_padd == 0) { err_novalidadd += 1; sendcanCMD(LDR_NACK);
-printf("NAC1K: %d %X %d %X %08X %08X\n\r",(unsigned int)debugPctr,(unsigned int)padd, count, 
- (unsigned int)p->dlc,(unsigned int)p->cd.ui[0],(unsigned int)p->cd.ui[1]);
+printf("NAC1K: %d %X %d %X %08X %08X\n\r",(UI)debugPctr,(UI)padd, count, 
+ (UI)p->dlc,(UI)p->cd.ui[0],(UI)p->cd.ui[1]);
 return;}	
 	
 	/* Is the address is within the flash bounds.  */
@@ -590,10 +643,12 @@ void do_set_addr(struct CANRCVBUF* p)
 			binchksum      = 0; // Checksum init
     		buildword      = 0; // Checksum & CRC build with 32b words
     		buildword_ct   = 0; // Byte->word counter
+bldct = 0;    		
     		// Save in case 1st block needs resending
     		binchksum_prev = 0;
-    		CRC->CR = 0x01; // 32b poly, + reset CRC computation
-    		crc = CRC->DR;	// (Should be ~0L)
+//    		crc_nib  = ~0L;
+    		CRC->CR  = 0x01; // 32b poly, + reset CRC computation
+    		crc      = CRC->DR;	// (Should be ~0L)
     		crc_prev = crc;
 
 debugPctr = 0;
@@ -602,12 +657,13 @@ printf("set_add:padd: %08X\n\r",(UI)padd);
 		else
 		{ // Here, address failed out-of-bounds check
 			p->cd.uc[0] = LDR_ADDR_OOB; // Failed the address check
-printf("#OOB? %d %08X %08X\n\r",(int)addressOK(ptmp),(unsigned int)ptmp,(unsigned int)_begin_flash);			
+printf("#OOB? %d %08X %08X\n\r",(int)addressOK(ptmp),(UI)ptmp,(UI)_begin_flash);			
 //morse_trap(22);
 		}
 	}
 	else
 	{ // Here, dlc size wrong
+printf("DLC ER %d\n\r",(UI)p->dlc);
 		sw_padd = 0;	// Don't be storing stuff in bogus addresses
 		p->cd.uc[0] = LDR_DLC_ERR;			
 	}
@@ -628,8 +684,8 @@ void do_flashsize(struct CANRCVBUF* p)
 	p->dlc = 3;	// Command plus short
 	p->cd.uc[1] = flashblocksize;	
 	p->cd.uc[2] = flashblocksize >> 8;
-printf("Z: flashblocksize: %X %X %X %X\n\r",(unsigned int)flashblocksize, 
-	(unsigned int)p->cd.uc[0],(unsigned int)p->cd.uc[1],(unsigned int)p->cd.uc[2]);
+printf("Z: flashblocksize: %X %X %X %X\n\r",(UI)flashblocksize, 
+	(UI)p->cd.uc[0],(UI)p->cd.uc[1],(UI)p->cd.uc[2]);
 	can_msg_put(p);	// Place in CAN output buffer
 	return;
 }
@@ -646,11 +702,11 @@ void do_rd4(struct CANRCVBUF* p)
 	p->cd.uc[2] = *rdaddr++;
 	p->cd.uc[3] = *rdaddr++;
 	p->cd.uc[4] = *rdaddr;
-printf("R4: read addr: %X %X %X %X %X %X\n\r",(unsigned int)rdaddr, (unsigned int)p->cd.uc[0],
-	(unsigned int)p->cd.uc[1],
-	(unsigned int)p->cd.uc[2],
-	(unsigned int)p->cd.uc[3],
-	(unsigned int)p->cd.uc[4]);
+printf("R4: read addr: %X %X %X %X %X %X\n\r",(UI)rdaddr, (UI)p->cd.uc[0],
+	(UI)p->cd.uc[1],
+	(UI)p->cd.uc[2],
+	(UI)p->cd.uc[3],
+	(UI)p->cd.uc[4]);
 	can_msg_put(p);	// Place in CAN output buffer
 	return;
 }
@@ -663,7 +719,7 @@ printf("R4: read addr: %X %X %X %X %X %X\n\r",(unsigned int)rdaddr, (unsigned in
 void do_getfromdaddress(struct CANRCVBUF* p, uint8_t* rdaddr)
 {
 	if (addressOK(rdaddr) != 0)
-	{printf("do_getfromdaddress: addr not OK: %08X\n\r",(unsigned int)rdaddr); return;}
+	{printf("do_getfromdaddress: addr not OK: %08X\n\r",(UI)rdaddr); return;}
 
 	p->dlc = 5;	// Command plus addr
 	p->cd.uc[1] = *rdaddr++;
@@ -671,11 +727,11 @@ void do_getfromdaddress(struct CANRCVBUF* p, uint8_t* rdaddr)
 	p->cd.uc[3] = *rdaddr++;
 	p->cd.uc[4] = *rdaddr;
 printf("GETADDR: read addr: %X %X %X %X %X\n\r", 
-	(unsigned int)p->cd.uc[0],
-	(unsigned int)p->cd.uc[1],
-	(unsigned int)p->cd.uc[2],
-	(unsigned int)p->cd.uc[3],
-	(unsigned int)p->cd.uc[4]);
+	(UI)p->cd.uc[0],
+	(UI)p->cd.uc[1],
+	(UI)p->cd.uc[2],
+	(UI)p->cd.uc[3],
+	(UI)p->cd.uc[4]);
 	can_msg_put(p);	// Place in CAN output buffer
 	return;
 }
@@ -692,12 +748,12 @@ void do_send4(struct CANRCVBUF* p, uint32_t n)
 	p->cd.uc[2] = n >> 8;
 	p->cd.uc[3] = n >> 16;
 	p->cd.uc[4] = n >> 24;
-printf("send4: %X %X %X %X %X %X\n\r", (unsigned int)n, 
-	(unsigned int)p->cd.uc[0],
-	(unsigned int)p->cd.uc[1],
-	(unsigned int)p->cd.uc[2],
-	(unsigned int)p->cd.uc[3],
-	(unsigned int)p->cd.uc[4]);
+printf("send4: %X %X %X %X %X %X\n\r", (UI)n, 
+	(UI)p->cd.uc[0],
+	(UI)p->cd.uc[1],
+	(UI)p->cd.uc[2],
+	(UI)p->cd.uc[3],
+	(UI)p->cd.uc[4]);
 
 	can_msg_put(p);	// Place in CAN output buffer
 	return;
@@ -728,7 +784,7 @@ void do_getflashpaddr(struct CANRCVBUF* p)
 	p->cd.ui[1] = pflashp;
 
 int i;printf("GET FLASHP addr ");
-for (i = 0; i < 8; i++) printf(" %X",(unsigned int)p->cd.uc[i]); 
+for (i = 0; i < 8; i++) printf(" %X",(UI)p->cd.uc[i]); 
 printf("\n\r"); 
 
 	can_msg_put(p);	// Place in CAN output buffer
@@ -882,6 +938,7 @@ INSERT INTO CMD_CODES  VALUES ('CMD_CMD_SYS_RESET_EXT',168,	'0xA8: [0] Extend cu
 		break;			
 
 	case LDR_EOF: // End of file
+		do_eof(p);
 		break;			
 
 	case CMD_CMD_SYS_RESET_CID:	// Reset cmd is only of "us"
@@ -901,16 +958,16 @@ INSERT INTO CMD_CODES  VALUES ('CMD_CMD_SYS_RESET_EXT',168,	'0xA8: [0] Extend cu
 		break;
 
 	case CMD_CMD_HEARTBEAT:
-printf("LOOPBACK?  %08X\n\r",(unsigned int)p->id);	
+printf("LOOPBACK?  %08X\n\r",(UI)p->id);	
 		break;		
 
 	default:		// Not a defined command
 		err_bogus_cmds_cmds += 1;
 printf("BOGUS CMD CODE: %X %08X %X",
-	(unsigned int)p->cd.uc[0], 
-	(unsigned int)p->id, 
-	(unsigned int)p->dlc);
-for (int i= 0; i < p->dlc; i++) printf(" %02X",(unsigned int)p->cd.uc[i]);
+	(UI)p->cd.uc[0], 
+	(UI)p->id, 
+	(UI)p->dlc);
+for (int i= 0; i < p->dlc; i++) printf(" %02X",(UI)p->cd.uc[i]);
 printf("\n\r");
 
 		break;
@@ -945,8 +1002,8 @@ void canwinch_ldrproto_poll(void)
 
 		/* Do something! */
 //		if (can.id == CANID_UNI_BMS_PC_I)
-printf("\n\r# Rcv: 0x%08X %d",(unsigned int)can.id,(unsigned int)can.dlc);
-for (int m = 0; m<can.dlc; m++)printf(" %02X",(unsigned int)can.cd.uc[m]);
+//printf("\n\r# Rcv: 0x%08X %d",(UI)can.id,(UI)can.dlc);
+//for (int m = 0; m<can.dlc; m++)printf(" %02X",(UI)can.cd.uc[m]);
 
 		do_cmd_cmd(&can);		// Execute command
 	}

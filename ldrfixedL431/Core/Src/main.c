@@ -419,7 +419,10 @@ int main(void)
     if ((int32_t)(DTWTIME - DTW_next_printf) > 0)
     {
       DTW_next_printf = DTW_next_printf + DTW_INC_printf;
-      printf("\n\r%5u ldrfixedL431 waiting",mctr++);
+      if (ldr_phase == 0)
+      {
+        printf("\n\r%5u ldrfixedL431 waiting",mctr++);
+      }
     }
 
     /* LED blinking */
