@@ -90,6 +90,7 @@ struct FLBLKBUF	// Working pointers and counts accompanying data for block
 	uint8_t* base; // Flash block base address
 	uint8_t*  end; // Flash block end address + 1
 	uint8_t*    p; // Working byte pointer within flash block
+	uint32_t eofsw;// Count number of byte differences
 	uint32_t diff; // Count of byte differences
 	uint16_t   sw; // Write switch: 0 = skip, 1 = write, 2 = erase and write
 	uint8_t eobsw; // Last data byte ended a sram image block
@@ -386,9 +387,9 @@ static void flashblockinit(void)
 	flblkbuff.eobsw = 0;
 	pt2 = &flblkbuff.fb.u64[0];		// RAM buffer for block
 	ptend = pt2 + (flashblocksize/sizeof(uint64_t)); // End+1 of sram buffer
-printf("padd: %08X\n\r",(UI)padd);
+//printf("padd: %08X\n\r",(UI)padd);
 printf("BEP %08X %08X %08X\n\r",(UI)flblkbuff.base,(UI)flblkbuff.end,(UI)flblkbuff.p );	
-printf("P0: %X %X %X\n\r",(UI)pt1,(UI)pt2,(UI)ptend);
+//printf("P0: %X %X %X\n\r",(UI)pt1,(UI)pt2,(UI)ptend);
 	while (pt2 < ptend) *pt2++ = *pt1++; // Copy flash to RAM buffer
 //printf("P1: %X %X %X\n\r",pt1, pt2, ptend);
 	flblkbuff.reqn = (uint32_t)ptend - (uint32_t)flblkbuff.p; // Request number of bytes to complete this flash block.
@@ -410,16 +411,18 @@ However, if all the bytes in a flash block are not changed we skip the erase & w
 sequence.
 */
 	int i;
-	for (i = 1; i < p->dlc; i++)
+	for (i = 1; ((i < p->dlc) && (flblkbuff.eobsw == 0)); i++)
 	{	
 		if (*flblkbuff.p != p->cd.uc[i])
 		{ // Here, one or more bytes have changed in flash block; erase needed
-			flblkbuff.sw = 0;
-printf(" D %08X %02X %02X\n\r",(UI)flblkbuff.p,(UI)*flblkbuff.p,(UI)p->cd.uc[i]);
-printf("(p-padd) %d dbgct %d",(UI)(flblkbuff.p-padd),(UI)dbgct);
+			flblkbuff.diff += 1; // Count total number bytes that were different
+			flblkbuff.sw = 1; // Flag that an erase/write will be needed
+printf(" D %08X %02X %02X diff %d\n\r",(UI)flblkbuff.p,(UI)*flblkbuff.p,(UI)p->cd.uc[i],(UI)flblkbuff.diff);
+printf("(p-padd) %d dbgct %d dlc %d\n\r",(UI)(flblkbuff.p-padd),(UI)dbgct,(UI)p->dlc);
 			*flblkbuff.p = p->cd.uc[i];	// Update sram flash image
 		}
-		build_chks(p->cd.uc[i]); // Add byte to build CRC & checksum with 32b words.
+		// Add byte to build CRC-32 & checksum with 32b words.
+		build_chks(p->cd.uc[i]);
 dbgct += 1;
 		/* Was this the last byte of the block? */
 		flblkbuff.p += 1;
@@ -521,6 +524,7 @@ static void do_eof(struct CANRCVBUF* p)
 		p->cd.uc[1] = 0; // Untag byte set by PC.
 		p->cd.ui[1] = 0xFEEDBACC; // Show we got EOB & no bytes to request
 		p->dlc = 8;
+printf("\n\r$$$$ EOF: match: %08X\n\r", (UI)crc);
 		can_msg_put(p);	// Place in CAN output buffer
 	}
 	else
@@ -643,6 +647,7 @@ void do_set_addr(struct CANRCVBUF* p)
 			binchksum      = 0; // Checksum init
     		buildword      = 0; // Checksum & CRC build with 32b words
     		buildword_ct   = 0; // Byte->word counter
+    		flblkbuff.eofsw= 0; // Flag shows if any block needed erase/write
 bldct = 0;    		
     		// Save in case 1st block needs resending
     		binchksum_prev = 0;
