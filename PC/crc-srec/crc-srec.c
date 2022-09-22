@@ -183,7 +183,7 @@ int main(int argc, char **argv)
 					}
 					else
 					{ // Add padding to our bin file
-printf("GAP: %d 0x%08X  0x%08X %d\n\r",linect,(s3bin_prev.addr+s3bin_prev.ct),s3bin.addr,s3bin.addr-(s3bin_prev.addr+s3bin_prev.ct) );						
+printf("GAP: %7d 0x%08X  0x%08X %d\n\r",linect,(s3bin_prev.addr+s3bin_prev.ct),s3bin.addr,s3bin.addr-(s3bin_prev.addr+s3bin_prev.ct) );						
 						for (i=0; i < (s3bin.addr - (s3bin_prev.addr+s3bin_prev.ct)); i++)
 						{ 
 							*pbin++ = 0xff; // Our bin data
@@ -250,7 +250,12 @@ printf("GAP: %d 0x%08X  0x%08X %d\n\r",linect,(s3bin_prev.addr+s3bin_prev.ct),s3
 	{
 		xt = *(uint32_t*)&bin[i*4];
 		fwrite((uint8_t*)&xt,1,4,fpXbin);
-	}		
+	}	
+
+	// Append crc and checksum to bin data sent to node
+	fwrite((uint8_t*)&crc2,1,4,fpXbin);
+	fwrite((uint8_t*)&binchksum,1,4,fpXbin);
+
 
 	/* Read in .bin file and compare to our local bin file.
 	   Where there are gaps the .bin will have zeros and
@@ -266,10 +271,10 @@ printf("GAP: %d 0x%08X  0x%08X %d\n\r",linect,(s3bin_prev.addr+s3bin_prev.ct),s3
 		}
 		binfilectr += 1;
 	}
-	printf("binfilectr: %5d 0x%08X\n",binfilectr,binfilectr);
-	printf("ourbinsize: %5d 0x%08X\n",ourbinsize,ourbinsize);
-	printf("ourbinctr : %5d 0x%08X\n",ourbinctr*4,ourbinctr*4);
-	printf("## word ct*4: %5d binchksum: 0x%08X  crc2: 0x%08X ",ourbinsize,(unsigned int)binchksum,(unsigned int)crc2);
+	printf("binfilectr : %5d 0x%08X\n",binfilectr,binfilectr);
+	printf("ourbinsize : %5d 0x%08X\n",ourbinsize,ourbinsize);
+	printf("ourbinctr  : %5d 0x%08X\n",ourbinctr*4,ourbinctr*4);
+	printf(" word ct*4 : %5d binchksum: 0x%08X  crc2: 0x%08X\n",ourbinsize,(unsigned int)binchksum,(unsigned int)crc2);
 
 	uint32_t crc = crc_32_nib_calc((uint32_t*)&bin[0],ourbinsize/4);//binfilectr/4 );
 //	printf("crc: 0x%08X\n",crc);
@@ -334,7 +339,7 @@ printf("GAP: %d 0x%08X  0x%08X %d\n\r",linect,(s3bin_prev.addr+s3bin_prev.ct),s3
 	fprintf(fpS3out,"%s",rectmp);
 	linectout += 1; // Output line counter
 
-	fprintf(fpS3out,"%s",buf);
+//??	fprintf(fpS3out,"%s",buf); 
 
 	printf ("CRC generated : 0x%08X\n\r",crc);
 	printf ("Checksum gen  : 0x%08lX\n\r",binchksum);

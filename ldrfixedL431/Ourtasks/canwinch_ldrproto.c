@@ -881,6 +881,7 @@ INSERT INTO CMD_CODES  VALUES ('CMD_CMD_SYS_RESET_EXT',168,	'0xA8: [0] Extend cu
 		break;
 
 	case LDR_RESET:		// RESET: Execute a software forced RESET for this unit only.
+		ldr_phase = 0;
 		system_reset();	// Cause a RESET
 		break;
 
