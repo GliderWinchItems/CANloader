@@ -85,7 +85,7 @@ union FLUN	// Assure aligment, etc.
 
 struct FLBLKBUF	// Working pointers and counts accompanying data for block
 {
-	union FLUN fb; // Size of largest flash block (2048 bytes)
+	union FLUN fb; // Flash block sram buffer (2048 bytes)
 	uint32_t reqn; // Number of bytes to request 
 	uint8_t* base; // Flash block base address
 	uint8_t*  end; // Flash block end address + 1
@@ -334,39 +334,54 @@ static void copypayload(uint8_t* pc, int8_t count)
 	return 0;
 }
 /* **************************************************************************************
- * static void wrblk(struct CANRCVBUF* pcan);
- * @brief	: Write RAM buffer out to flash
+ * static void do_flash_cycle(void);
+ * @brief	: Do a flash erase:write:verify cycle
  * ************************************************************************************** */
-static void wrblk(struct CANRCVBUF* pcan)
+static int do_flash_cycle(void)
 {
-printf("wrblk: %d %X %X %08X %08X\n\r",(UI)debugPctr, 
-	(UI)padd, 
-	(UI)pcan->dlc, 
-	(UI)pcan->cd.ui[0], 
-	(UI)pcan->cd.ui[1]);
+	int ret;
+	uint8_t ct = 0;
 
-	switch (flblkbuff.sw) 
+	do
 	{
-	case 0:	// Need to write or erase & write?
-printf("wrblk: CASE 0: no need to write block\n\r");
-		break;	// No need to write the block
+		ret = flash_erase((uint64_t*)padd);
+		if (ret != 0)
+		{
+			printf("FLASH ERASE ERR: padd: 0x%08X ret: %d ct: %d\n\r",(unsigned int)padd,(int)ret,(int)ct);
+		}
+	} while ((ret != 0) && (ct++ <= 3));
+printf("F ERASE: %d\n\r",ct);		
 
-	case 2:
-	case 3: // Erase block, then write
-printf("wrblk: CASE 2: erase block before writing\n\r");
-		can_msg_cmd.cd.uc[2] = flash_erase((uint16_t*)flblkbuff.base);
+	if(ct >= 3) return ret;
 
-	case 1: // Write, but no need for erase
-		can_msg_cmd.cd.uc[1] = flash_write( (uint16_t*)flblkbuff.base, &flblkbuff.fb.u16[0], flashblocksize );
-printf("wrblk: CASE 1: writing block\n\r");
+	ct = 0;
+	do
+	{
+		ret = flash_write((uint64_t*)padd, &flblkbuff.fb.u64[0] ,flashblocksize/8);
+		if (ret != 0)
+		{
+			printf("FLASH WRITE ERR: padd: 0x%08X ret: %d ct: %d\n\r",(unsigned int)padd, (int)ret, (int)ct);
+		}
+	} while ((ret != 0) && (ct++ <= 3));
+printf("\n\rF WRITE: %d\n\r",ct);		
 
-if ((can_msg_cmd.cd.uc[1] != 0) || (can_msg_cmd.cd.uc[2] != 0))
- printf("wrblk: pay[1] %X pay[2] %X\n\r",(UI)can_msg_cmd.cd.uc[1], (UI)can_msg_cmd.cd.uc[2]);
-		break;	
-	default:
-printf("wrblk: default: %d\n\r",(UI)flblkbuff.sw);
+	if(ct >= 3) return ret;
+
+	uint64_t* psram      = &flblkbuff.fb.u64[0];
+	uint64_t* psram_end  = &flblkbuff.fb.u64[flashblocksize/8];
+	uint64_t* pflash     = (uint64_t*)padd;
+	while (psram != psram_end)
+	{
+		if (*psram != *pflash)
+		{
+			#define ULL unsigned long long
+			printf("FLASH VERIFY ERR:\n\r\t0x%016llX\n\r\t0x%016llX\n\r",(ULL)*psram,(ULL)*pflash);
+		}
+		psram  += 1;
+		pflash += 1;
 	}
-	return;
+printf("F VER %d\n\r",ret);
+	return ret;
 }
 /* **************************************************************************************
  * static void flashblockinit(void);
@@ -405,20 +420,25 @@ static void do_data(struct CANRCVBUF* p)
 {
 /*
 We don't handle the situation where a flash block has a double word of 0xF's and could be
-programmed without an erase. Not likely, and adds complication.
+programmed without an erase. Not likely, and adds complication since a double word could
+span more than one CAN msg.
 
 However, if all the bytes in a flash block are not changed we skip the erase & write 
 sequence.
 */
 	int i;
+	/* If eobsw sets and payload bytes remain, ignore the not stored payload bytes, 
+	   as it is an error. */
 	for (i = 1; ((i < p->dlc) && (flblkbuff.eobsw == 0)); i++)
 	{	
 		if (*flblkbuff.p != p->cd.uc[i])
 		{ // Here, one or more bytes have changed in flash block; erase needed
 			flblkbuff.diff += 1; // Count total number bytes that were different
 			flblkbuff.sw = 1; // Flag that an erase/write will be needed
+#if 0			
 printf(" D %08X %02X %02X diff %d\n\r",(UI)flblkbuff.p,(UI)*flblkbuff.p,(UI)p->cd.uc[i],(UI)flblkbuff.diff);
 printf("(p-padd) %d dbgct %d dlc %d\n\r",(UI)(flblkbuff.p-padd),(UI)dbgct,(UI)p->dlc);
+#endif
 			*flblkbuff.p = p->cd.uc[i];	// Update sram flash image
 		}
 		// Add byte to build CRC-32 & checksum with 32b words.
@@ -428,27 +448,17 @@ dbgct += 1;
 		flblkbuff.p += 1;
 		if (flblkbuff.p >= flblkbuff.end)
 		{ // Here, end of sram image. Erase and write block when EOB (or theoretically EOF) received
-			printf("\n\rEND p %08X end %08X padd %08X sw %d diff %d\n\r",(UI)flblkbuff.p,(UI)flblkbuff.end,
+			printf("\n\rEND BLK p %08X end %08X padd %08X sw %d diff %d\n\r",(UI)flblkbuff.p,(UI)flblkbuff.end,
 				(UI)padd,(UI)flblkbuff.sw,(UI)flblkbuff.diff);
 			/* Here next CAN msg should be a EOB or EOF. */
 			flblkbuff.eobsw = 1;
 		}
+	}
 
-#if 0
-		if (flblkbuff.p >= flblkbuff.end)
-		{ // Here, end of sram image. Time to erase and write block.
-printf("\n\rEND p %08X end %08X padd %08X sw %d diff %d\n\r",(UI)flblkbuff.p,(UI)flblkbuff.end,
-	(UI)padd,(UI)flblkbuff.sw,(UI)flblkbuff.diff);
-			if (flblkbuff.sw != 0)
-			{
-				// TODO: erase and write sram image
-			}
-			// Advance to next block
-			padd += flashblocksize;
-			flashblockinit(); // Setup for next download burst
-		}
-#endif
-
+	/* Check if flash erase/write/verify is required. */
+	if ((flblkbuff.eobsw != 0) && (flblkbuff.sw != 0))
+	{ // Here, a flash cycle is to be done.
+		do_flash_cycle();
 	}
 	return;
 }
@@ -492,7 +502,6 @@ printf("PC CRC %08X\n\r",(UI)p->cd.ui[1]);
 printf("LCHECK %08X\n\r",(UI)binchksum);
 
 	}
-
 	return;
 }
 /* **************************************************************************************
@@ -526,6 +535,7 @@ static void do_eof(struct CANRCVBUF* p)
 		p->dlc = 8;
 printf("\n\r$$$$ EOF: match: %08X\n\r", (UI)crc);
 		can_msg_put(p);	// Place in CAN output buffer
+		ldr_phase = 0;
 	}
 	else
 	{ // Here, mismatch, so redo this mess. LDR_NACK
@@ -877,7 +887,7 @@ INSERT INTO CMD_CODES  VALUES ('CMD_CMD_SYS_RESET_EXT',168,	'0xA8: [0] Extend cu
 		break;
 
 	case LDR_WRBLK:		// Done with block: write block with whatever you have..
-		do_wrblk(p);
+//		do_wrblk(p);
 		break;
 
 	case LDR_RESET:		// RESET: Execute a software forced RESET for this unit only.

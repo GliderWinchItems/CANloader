@@ -37,6 +37,8 @@
 #include "crc-32_nib.h"
 #include "crc-32_min.h"
 
+extern uint32_t __appbegin;
+
 #define SYSCLOCKFREQ 16000000
 
 /* &&&&&&&&&&&&& Each node on the CAN bus gets a unit number &&&&&&&&&&&&&&&&&&&&&&&&&& */
@@ -320,18 +322,18 @@ int main(void)
 //  printf("app_entry_tmp: %08X\n\r",app_entry_tmp);
 //  uint32_t* papp_entry = (uint32_t*)((uint32_t)(*(uint32_t**)__appjump) & ~1L);
   uint32_t* papp_entry = (uint32_t*)app_entry_tmp;
-  if ((papp_entry >= (uint32_t*)(BEGIN_FLASH + (flashsize*1024))) || (papp_entry < (uint32_t*)BEGIN_FLASH))
+  if ((papp_entry >= (uint32_t*)(&__appbegin + (flashsize*1024))) || (papp_entry < (uint32_t*)&__appbegin))
   { // Here bogus address (which could crash processor)
     apperr |= APPERR_APP_ENTRY_OOR;
-//    printf("papp_entry err: %08X %08X %08X\n\r",(unsigned int)papp_entry,(unsigned int)(BEGIN_FLASH + (flashsize*1024)),
-//      (unsigned int)BEGIN_FLASH);
+//    printf("papp_entry err: %08X %08X %08X\n\r",(unsigned int)papp_entry,(unsigned int)(&__appbegin + (flashsize*1024)),
+//      (unsigned int)&__appbegin);
   }
   else
   {
     printf("App addr entry: %08X\n\r",(unsigned int)papp_entry);
     
     papp_crc = *(uint32_t**)(papp_entry-1);
-    if ((papp_crc >= (uint32_t*)(BEGIN_FLASH + (flashsize*1024))) || (papp_crc < (uint32_t*)BEGIN_FLASH))
+    if ((papp_crc >= (uint32_t*)(&__appbegin + (flashsize*1024))) || (papp_crc < (uint32_t*)&__appbegin))
     {
      apperr |= APPERR_APP_CRC_ADDR;
     }
@@ -341,7 +343,7 @@ int main(void)
     }
     
     papp_chk =  (uint32_t*)(*(uint32_t**)(papp_entry-1)+1);
-    if ((papp_chk >= (uint32_t*)(BEGIN_FLASH + (flashsize*1024))) || (papp_chk < (uint32_t*)BEGIN_FLASH))
+    if ((papp_chk >= (uint32_t*)(&__appbegin + (flashsize*1024))) || (papp_chk < (uint32_t*)&__appbegin))
     {
      apperr |= APPERR_APP_CHK_ADDR;
     }
@@ -352,7 +354,7 @@ int main(void)
   }
   if (apperr == 0)
   { // Here, no addresses were out-of-range. Check CRC and checksum
-    uint32_t* p = (uint32_t*)BEGIN_FLASH; // Point to beginning of app flash
+    uint32_t* p = (uint32_t*)&__appbegin; // Point to beginning of app flash
     binchksum   = 0; // Checksum init
     chkctr      = 0;
     /* Bit 12 CRCEN: CRC clock enable */
@@ -376,7 +378,7 @@ int main(void)
   }
 // printf("checksum: 0x%08X CRC-32: 0x%08X\n\r",(unsigned int)binchksum,ck);
 
-//  uint32_t hwcrc = rc_crc32_hw((uint32_t*)BEGIN_FLASH, chkctr/4);
+//  uint32_t hwcrc = rc_crc32_hw((uint32_t*)&__appbegin, chkctr/4);
 //  printf("hw  crc: 0x%08X\n\r",~(unsigned int)hwcrc);
 
   /* Do the CRCs and Checksums match? */

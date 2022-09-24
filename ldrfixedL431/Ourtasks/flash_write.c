@@ -10,39 +10,6 @@
 */
 #include "stm32l431xx.h"
 #include "flash_write.h"
-/******************************************************************************
- * int flash_write_ram(uint16_t *pflash, uint16_t* pfrom, int count);
- *  @brief 	: Write "count" uint16_t (1/2 words) to flash from ram
- *  @param	: pflash = 1/2 word pointer to address in flash
- *  @param	: pfrom = 1/2 word pointer to address with source data
- *  @param	: count = number of 1/2 words to write
- *  @return	: zero = success; not zero = failed
-*******************************************************************************/
-/*     The main Flash memory programming sequence in standard mode is as follows:
-      ●    Check that no main Flash memory operation is ongoing by checking the BSY bit in the
-           FLASH_SR register.
-      ●    Set the PG bit in the FLASH_CR register.
-      ●    Perform the data write (half-word) at the desired address.
-      ●    Wait for the BSY bit to be reset.
-      ●    Read the programmed value and verify.
-Note: The registers are not accessible in write mode when the BSY bit of the FLASH_SR register
-      is set.
-*/
-int flash_write_ram(uint16_t *pflash, uint16_t *pfrom, int count)
-{
-	while (count > 0)
-	{
-		while ((FLASH->SR & 0x1) != 0);
-		FLASH->CR |= 1;	// Set program bit
-		*pflash++ = *pfrom++;
-		while ((FLASH->SR & 0x1) != 0);
-		FLASH->CR |= 1;	// Set program bit
-		*pflash++ = *pfrom++;
-		count--;
-	}
-	
-	return 0;	
-}
 
 /******************************************************************************
  *  int flash_unlock(uint32_t address);
@@ -53,76 +20,23 @@ int flash_write_ram(uint16_t *pflash, uint16_t *pfrom, int count)
 #define FLASH_KEY1  0x45670123	// Unlock 1st
 #define FLASH_KEY2  0xCDEF89AB	// Unlock 2nd
 
+#define ERR_FLGS 0xC3FB // Error flags
+
+extern uint32_t __appbegin; // .ld file supplies app loading address
+
 int flash_unlock(void)
 {
 	FLASH->KEYR = FLASH_KEY1;
 	FLASH->KEYR = FLASH_KEY2;
 	return (FLASH->CR & FLASH_CR_LOCK);
 }
-#ifdef TWO_FLASH_BANKS
-int flash_unlock2(void)
-{
-	FLASH->KEYR2 = FLASH_KEY1;
-	FLASH->KEYR2 = FLASH_KEY2;
-	return (FLASH->CR2 & FLASH_CR_LOCK);
-}
-#endif
 
 /******************************************************************************
- * int flash_write(uint16_t *pflash, uint16_t *pfrom, int count);
- *  @brief 	: Write "count" uint16_t (1/2 words) to flash
- *  @param	: pflash = 1/2 word pointer to address in flash
- *  @param	: pfrom = 1/2 word pointer to address with source data
- *  @param	: count = number of 1/2 words to write
- *  @return	: 
- *           0 = success
- *          -1 = address greater than 1 MB
- *          -2 = unlock sequence failed for upper bank
- *          -3 = address below start of ram.
- *          -4 = unlock sequence failed for lower bank
- *          -5 = error at some point in the writes, flash_err has the bits
-*******************************************************************************/
-uint32_t flash_err;
-int flash_write(uint16_t *pflash, uint16_t *pfrom, int count)
-{
-	int i;
-	flash_err = 0;
-	for (i = 0; i < count; i++)
-	{
-#ifdef TWO_FLASH_BANKS
-
-		if (pflash >= (uint16_t*)0x08080000)
-		{ // Here maybe 2nd bank
-			if (pflash > (uint16_t*)0x080FFFFe)  return -1;
-			while ((FLASH->SR2 & 0x1) != 0);	// Wait for busy to go away
-			if (flash_unlock2() != 0) return -2;
-			FLASH->SR2 = (FLASH_EOP | FLASH_WRPRTERR | FLASH_PGERR); // Clear any error bits
-			FLASH->CR2 = FLASH_PG;		// Set program bit
-			*pflash++ = *pfrom++;		// Program the 1/2 word
-			while ((FLASH->SR2 & 0x1) != 0);	// Wait for busy to go away
-			flash_err |= FLASH->SR2;			
-		}
-		else
-#endif			
-		{ // Here maybe 1st bank
-			if (pflash < (uint16_t*)0x0800000)  return -3;
-			while ((FLASH->SR & 0x1) != 0);	// Wait for busy to go away
-			if (flash_unlock() != 0) return -4;
-			FLASH->SR = (FLASH_SR_EOP | FLASH_SR_WRPERR | FLASH_SR_PROGERR); // Clear any error bits
-			FLASH->CR = FLASH_SR_PGAERR;		// Set program bit
-			*pflash++ = *pfrom++;		// Program the 1/2 word
-			while ((FLASH->SR & 0x1) != 0);	// Wait for busy to go away
-			flash_err |= FLASH->SR;			
-		}
-	}	
-	if ( (flash_err & (FLASH_SR_WRPERR | FLASH_SR_PGAERR)) != 0) return -5;	
-	return 0;
-}
-/******************************************************************************
- * int flash_erase(uint16_t* pflash);
- *  @brief 	: Erase one page
- *  @param	: pflash = 1/2 word pointer to address in flash
- *  @param	: pfrom = 1/2 word pointer to address with source data
+ * int flash_write(uint64_t *pflash, uint64_t *pfrom, int count);
+ *  @brief 	: Write "count" uint64_t double words to flash
+ *  @param	: pflash = pointer to double word flash address
+ *  @param	: pfrom  = pointer to double word sram address
+ *  @param	: count = number of double words
  *  @return	: 
  *           0 = success
  *          -1 = address greater than 1 MB
@@ -132,44 +46,115 @@ int flash_write(uint16_t *pflash, uint16_t *pfrom, int count)
  *          -5 = error at some point in the writes, flash_err has the bits
 *******************************************************************************/
 /*
-● Check that no Flash memory operation is ongoing by checking the BSY bit in the
-  FLASH_CR register
-● Set the PER bit in the FLASH_CR register
-● Program the FLASH_AR register to select a page to erase
-● Set the STRT bit in the FLASH_CR register
-● Wait for the BSY bit to be reset
-● Read the erased page and verify
+1. Check that no Flash main memory operation is ongoing by checking the BSY bit in the
+	Flash status register (FLASH_SR).
+
+2. Check and clear all error programming flags due to a previous programming. If not,
+	PGSERR is set.
+
+3. Set the PG bit in the Flash control register (FLASH_CR).
+
+4. Perform the data write operation at the desired memory address, inside main memory
+	block or OTP area. Only double word can be programmed.
+	– Write a first word in an address aligned with double word
+	– Write the second word
+
+5. Wait until the BSY bit is cleared in the FLASH_SR register.
+
+6. Check that EOP flag is set in the FLASH_SR register (meaning that the programming
+	operation has succeed), and clear it by software.
+
+7. Clear the PG bit in the FLASH_CR register if there no more programming request anymore.
 */
-int flash_erase(uint16_t *pflash)
+uint32_t flash_err;
+int flash_write(uint64_t *pflash, uint64_t *pfrom, int count)
+{
+//return 0;
+	int i;
+	flash_err = 0;
+
+	/* Don't ruin the CANloader! */
+	if ((uint32_t*)pflash < &__appbegin)  return -3;
+
+//	if (flash_unlock() != 0) return -4;
+
+	while ((FLASH->SR & 0x1) != 0);	// Wait for busy to go away
+
+	for (i = 0; i < count; i++)
+	{
+	
+		while ((FLASH->SR & 0x1) != 0);	// Wait for busy to go away
+		
+		/* Clear any existing error flags. */
+		FLASH->SR |= ERR_FLGS; 
+
+		/* Set PG (flash program bit) */
+		FLASH->CR |= 0x1;  
+
+		/* Send two words to flash */
+		*pflash++ = *pfrom++; 
+
+		/* Wait for busy to go away */
+		while ((FLASH->SR & 0x1) != 0);	
+
+		flash_err |= FLASH->SR;			
+	}	
+	/* Clear PG (flash program bit) */
+	FLASH->CR &= ~0x1; 
+
+	if ( (flash_err & (FLASH_SR_WRPERR | FLASH_SR_PGAERR)) != 0) return -5;	
+	return 0;
+}
+/******************************************************************************
+ * int flash_erase(uint64_t* pflash);
+ *  @brief 	: Erase one page
+ *  @param	: pflash = double word pointer to address in flash
+ *  @return	: 
+ *           0 = success
+ *          -3 = address below start of flash
+ *          -4 = unlock sequence failed for lower bank
+ *          -5 = error at some point in the writes, flash_err has the bits
+*******************************************************************************/
+/*
+To erase a page (2 Kbyte), follow the procedure below:
+1. Check that no Flash memory operation is ongoing by checking the BSY bit in the Flash
+status register (FLASH_SR).
+2. Check and clear all error programming flags due to a previous programming. If not,
+PGSERR is set.
+3. Set the PER bit and select the page you wish to erase (PNB) in the Flash control
+register (FLASH_CR).
+4. Set the STRT bit in the FLASH_CR register.
+5. Wait for the BSY bit to be cleared in the FLASH_SR register.
+*/
+
+int flash_erase(uint64_t *pflash)
 {
 	flash_err = 0;
-	if (pflash >= (uint16_t*)0x08080000)
-	{ // Here maybe 2nd bank
-#ifdef TWO_FLASH_BANKS
 
-		if (pflash > (uint16_t*)0x080FFFFe)  return -1;
-		while ((FLASH_SR2 & 0x1) != 0);	// Wait for busy to go away
-		if (flash_unlock2() != 0) return -2;
-		FLASH_CR2 = FLASH_CR_PER;		// Set Page Erase function
-		FLASH_ACR2 = (uint32_t)pflash;	// Set page address
-		FLASH_CR2 |= FLASH_CR_STRT;	// Start erase
-		while ((FLASH_SR2 & 0x1) != 0);	// Wait for busy to go away
-		FLASH_CR2 &= ~FLASH_CR_PER;	// Remove PER bit
-		flash_err |= FLASH_SR2;
-#endif	
-	}
-	else
-	{ // Here maybe 1st bank
-		if (pflash < (uint16_t*)0x0800000)  return -3;
-		while ((FLASH->SR & 0x1) != 0);	// Wait for busy to go away
-		if (flash_unlock() != 0) return -4;
-		FLASH->CR  = FLASH_CR_PER;		// Set Page Erase function
-		FLASH->ACR = (uint32_t)pflash;		// Set page address
-		FLASH->CR |= FLASH_CR_STRT;		// Start erase
-		while ((FLASH->SR & 0x1) != 0);	// Wait for busy to go away
-		FLASH->CR &= ~FLASH_CR_PER;		// Remove PER bit
-		flash_err |= FLASH->SR;
-	}
+	/* Don't erase the CANloader! */
+	if ((uint32_t*)pflash < &__appbegin)  return -3;
+
+	while ((FLASH->SR & 0x1) != 0);	// Wait for busy to go away
+
+	if (flash_unlock() != 0) return -4;
+
+	/* Clear any existing error flags. */
+	FLASH->SR |= ERR_FLGS; 
+
+	/* Set the PER bit and select the page */
+	FLASH->CR  &= ~((0x7FF) << 3); // Clear old page number
+	uint16_t tmp = ((uint32_t)pflash >> 11); // New page number
+	FLASH->CR  |=  (tmp << 3) | 0x2; // New page | Enable page erase
+
+	/* Start erase. */
+	FLASH->CR |= (1<<16); // Start bit
+
+	/* Wait for busy to go away. */
+	while ((FLASH->SR & 0x1) != 0);
+
+	FLASH->CR &= ~FLASH_CR_PER; // Remove PER bit
+	flash_err |= FLASH->SR;
+
 	if ( (flash_err & (FLASH_SR_WRPERR | FLASH_SR_PGAERR)) != 0) return -5;
 	return 0;
 }
