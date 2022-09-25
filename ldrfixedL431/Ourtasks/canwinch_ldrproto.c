@@ -340,47 +340,72 @@ static void copypayload(uint8_t* pc, int8_t count)
 static int do_flash_cycle(void)
 {
 	int ret;
-	uint8_t ct = 0;
+	uint8_t ct;
+	uint8_t fg;
+	uint8_t dodoct = 0;
 
 	do
 	{
-		ret = flash_erase((uint64_t*)padd);
-		if (ret != 0)
+		ct = 0;
+		do
 		{
-			printf("FLASH ERASE ERR: padd: 0x%08X ret: %d ct: %d\n\r",(unsigned int)padd,(int)ret,(int)ct);
+			ret = flash_erase((uint64_t*)padd);
+			if (ret != 0)
+			{
+				printf("F ERASE ER: padd: 0x%08X ret: %d ct: %d\n\r",(unsigned int)padd,(int)ret,(int)ct);
+			}
+		} while ((ret != 0) && (ct++ <= 3));
+
+		uint32_t* pf = (uint32_t*)padd;
+		for (int i = 0; i < 2048/4; i++)
+		{
+			if (*pf != ~0L)
+			{
+				printf("FE %08X %08X\n\r",(unsigned int)pf,(unsigned int)*pf);	
+				pf += 1;
+			}
 		}
-	} while ((ret != 0) && (ct++ <= 3));
-printf("F ERASE: %d\n\r",ct);		
+		
+		if (ret == 0)
+		{
+			printf("F ERASE OK: padd: 0x%08X ret: %d ct: %d\n\r",(unsigned int)padd,(int)ret,(int)ct);
+		}
 
-	if(ct >= 3) return ret;
+		if(ct >= 3) return ret;
 
-	ct = 0;
-	do
-	{
 		ret = flash_write((uint64_t*)padd, &flblkbuff.fb.u64[0] ,flashblocksize/8);
 		if (ret != 0)
 		{
-			printf("FLASH WRITE ERR: padd: 0x%08X ret: %d ct: %d\n\r",(unsigned int)padd, (int)ret, (int)ct);
+			printf("F WRT ERR: padd: 0x%08X ret: %d ct: %d\n\r",(unsigned int)padd, (int)ret, (int)ct);
 		}
-	} while ((ret != 0) && (ct++ <= 3));
-printf("\n\rF WRITE: %d\n\r",ct);		
-
-	if(ct >= 3) return ret;
-
-	uint64_t* psram      = &flblkbuff.fb.u64[0];
-	uint64_t* psram_end  = &flblkbuff.fb.u64[flashblocksize/8];
-	uint64_t* pflash     = (uint64_t*)padd;
-	while (psram != psram_end)
-	{
-		if (*psram != *pflash)
+		else
 		{
-			#define ULL unsigned long long
-			printf("FLASH VERIFY ERR:\n\r\t0x%016llX\n\r\t0x%016llX\n\r",(ULL)*psram,(ULL)*pflash);
+			printf("F WRT OK: padd: 0x%08X ret: %d ct: %d\n\r",(unsigned int)padd, (int)ret, (int)ct);
 		}
-		psram  += 1;
-		pflash += 1;
-	}
-printf("F VER %d\n\r",ret);
+
+	
+
+		uint32_t* psram      = &flblkbuff.fb.u32[0];
+		uint32_t* pflash     = (uint32_t*)padd;
+		fg = 0;
+		for (int i = 0; i < 2048/4; i++)
+		{
+			if (*psram != *pflash)
+			{
+				fg = 1;
+				printf("F VER ER: 0x%08X\n\r\t0x%08X\n\r\t0x%08X\n\r",(unsigned int)pflash,(unsigned int)*psram,(unsigned int)*pflash);
+			}
+			psram  += 1;
+			pflash += 1;
+		}
+		if (fg == 0)
+		{
+			printf("F VER OK %d\n\r",ret);
+		}
+
+	dodoct +=1 ;
+	} while ((fg != 0) && (dodoct < 4));
+
 	return ret;
 }
 /* **************************************************************************************
@@ -456,7 +481,7 @@ dbgct += 1;
 	}
 
 	/* Check if flash erase/write/verify is required. */
-	if ((flblkbuff.eobsw != 0) && (flblkbuff.sw != 0))
+	if ((flblkbuff.eobsw != 0) && (flblkbuff.sw != 0)) 
 	{ // Here, a flash cycle is to be done.
 		do_flash_cycle();
 	}
@@ -523,10 +548,14 @@ static void do_eof(struct CANRCVBUF* p)
 	if (p->cd.ui[1] == crc)
 	{ // Here, our CRC matches PC's CRC
 		/* Erase and write flash block if there were changes. */
-		
+		if (flblkbuff.sw != 0)
+		{ // Here, a flash cycle is to be done.
+			do_flash_cycle();
+		}	
+
 		/* Get next flash block and send PC a byte request. LDR_ACK */
-		padd += flashblocksize;
-		flashblockinit();
+//		padd += flashblocksize;
+//		flashblockinit();
 
 		/* Send response */
 		p->cd.uc[0] = LDR_ACK;
@@ -587,21 +616,7 @@ debugPctr += 1;
 	return;
 }
 
-/* **************************************************************************************
- * void do_wrblk(struct CANRCVBUF* pcan);
- * @brief	: Write RAM buffer out to flash
- * ************************************************************************************** */
-void do_wrblk(struct CANRCVBUF* pcan)
-{
-	wrblk(pcan);	// Write block to flash
 
-	/* Let PC know the flash write is complete. Send status in payload. */
-	can_msg_cmd.dlc = 3;
-	can_msg_cmd.cd.uc[0] = LDR_WRBLK;
-	can_msg_put(&can_msg_cmd);		// Place in CAN output buffer
-
-	return;
-}
 /* **************************************************************************************
  * void do_crc(struct CANRCVBUF* p);
  * @brief	: Send CRC computed when 'main.c' started
@@ -887,7 +902,6 @@ INSERT INTO CMD_CODES  VALUES ('CMD_CMD_SYS_RESET_EXT',168,	'0xA8: [0] Extend cu
 		break;
 
 	case LDR_WRBLK:		// Done with block: write block with whatever you have..
-//		do_wrblk(p);
 		break;
 
 	case LDR_RESET:		// RESET: Execute a software forced RESET for this unit only.

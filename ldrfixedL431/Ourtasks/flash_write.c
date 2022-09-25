@@ -24,8 +24,12 @@
 
 extern uint32_t __appbegin; // .ld file supplies app loading address
 
+static uint8_t otosw;
+
 int flash_unlock(void)
 {
+	if (otosw != 0) return 0;
+	otosw = 1;
 	FLASH->KEYR = FLASH_KEY1;
 	FLASH->KEYR = FLASH_KEY2;
 	return (FLASH->CR & FLASH_CR_LOCK);
@@ -95,7 +99,7 @@ int flash_write(uint64_t *pflash, uint64_t *pfrom, int count)
 		*pflash++ = *pfrom++; 
 
 		/* Wait for busy to go away */
-		while ((FLASH->SR & 0x1) != 0);	
+		while ((FLASH->SR & (1 << 16)) != 0);	
 
 		flash_err |= FLASH->SR;			
 	}	
