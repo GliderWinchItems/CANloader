@@ -1,8 +1,8 @@
 /******************************************************************************
-* File Name          : flash_write.h
-* Date First Issued  : 07/28/2013
-* Board              : ../svn_sensor/hw/trunk/eagle/f103R/RxT6
-* Description        : flash write: small bits of code that execute in ram
+* File Name          : flash_write.c
+* Date First Issued  : 09/27/2022
+* Board              : bmsadbms1818
+* Description        : flash write: STM32L431 standard mode
 *******************************************************************************/
 /* Define to prevent recursive inclusion -------------------------------------*/
 #ifndef __FLASH_WRITE

@@ -404,7 +404,7 @@ static int do_flash_cycle(void)
 		}
 
 	dodoct +=1 ;
-	} while ((fg != 0) && (dodoct < 4));
+	} while ((fg != 0) && (dodoct < 1));
 
 	return ret;
 }
@@ -473,8 +473,11 @@ dbgct += 1;
 		flblkbuff.p += 1;
 		if (flblkbuff.p >= flblkbuff.end)
 		{ // Here, end of sram image. Erase and write block when EOB (or theoretically EOF) received
+extern uint32_t dtwfl1;
+extern uint32_t dtwfl2;			
+printf("dtw %d",(UI)(dtwfl2-dtwfl1));			
 			printf("\n\rEND BLK p %08X end %08X padd %08X sw %d diff %d\n\r",(UI)flblkbuff.p,(UI)flblkbuff.end,
-				(UI)padd,(UI)flblkbuff.sw,(UI)flblkbuff.diff);
+				(UI)padd,(UI)flblkbuff.sw,(UI)flblkbuff.diff);							
 			/* Here next CAN msg should be a EOB or EOF. */
 			flblkbuff.eobsw = 1;
 		}

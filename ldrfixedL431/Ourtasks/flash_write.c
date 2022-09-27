@@ -1,15 +1,19 @@
 /******************************************************************************
 * File Name          : flash_write.c
-* Date First Issued  : 07/28/2013
-* Board              : ../svn_sensor/hw/trunk/eagle/f103R/RxT6
-* Description        : flash write: small bits of code that execute in ram
+* Date First Issued  : 09/27/2022
+* Board              : bmsadbms1818
+* Description        : flash write: STM32L431 standard mode
 *******************************************************************************/
 /*
-
-
+07/28/2013 Original flash_write.c
+09/27/2022 Update & test for STM32L431
 */
+
 #include "stm32l431xx.h"
+//#include "stm32l4xx_hal_flash.c"
 #include "flash_write.h"
+
+#include "DTW_counter.h"
 
 /******************************************************************************
  *  int flash_unlock(uint32_t address);
@@ -69,11 +73,68 @@ int flash_unlock(void)
 	operation has succeed), and clear it by software.
 
 7. Clear the PG bit in the FLASH_CR register if there no more programming request anymore.
+
 */
+uint32_t dtwfl1;
+uint32_t dtwfl2;
+#if 1
 uint32_t flash_err;
 int flash_write(uint64_t *pflash, uint64_t *pfrom, int count)
 {
-//return 0;
+	int i;
+	flash_err = 0;
+
+	/* Don't ruin the CANloader! */
+	if ((uint32_t*)pflash < &__appbegin)  return -3;
+
+//	if (flash_unlock() != 0) return -4;
+
+	while ((FLASH->SR & 0x1) != 0);	// Wait for busy to go away
+
+uint32_t* pfl = (uint32_t*)pflash;
+uint32_t* prm = (uint32_t*)pfrom;	
+
+dtwfl1 = DTWTIME;
+
+	for (i = 0; i < count; i++)
+	{
+	
+		while ((FLASH->SR & 0x1) != 0);	// Wait for busy to go away
+		
+		/* Clear any existing error flags. */
+		FLASH->SR |= ERR_FLGS; 
+
+		/* Set PG (flash program bit) */
+		FLASH->CR |= 0x1;  
+
+		/* Send two words to flash */
+		*pfl++ = *prm++; 
+
+ 		/* Barrier to ensure programming is performed in 2 steps, in right order
+    	(independently of compiler optimization behavior) */
+  		__ISB();
+
+		*pfl++ = *prm++; 
+
+		/* Wait for busy to go away */
+		while ((FLASH->SR & (1 << 16)) != 0);	
+
+		flash_err |= FLASH->SR;			
+	}	
+dtwfl2 = DTWTIME;	
+
+	/* Clear PG (flash program bit) */
+	FLASH->CR &= ~0x1; 
+
+	if ( (flash_err & (FLASH_SR_WRPERR | FLASH_SR_PGAERR)) != 0) return -5;	
+	return 0;
+}
+#endif
+
+#if 0
+uint32_t flash_err;
+int flash_write(uint64_t *pflash, uint64_t *pfrom, int count)
+{
 	int i;
 	flash_err = 0;
 
@@ -109,6 +170,7 @@ int flash_write(uint64_t *pflash, uint64_t *pfrom, int count)
 	if ( (flash_err & (FLASH_SR_WRPERR | FLASH_SR_PGAERR)) != 0) return -5;	
 	return 0;
 }
+#endif
 /******************************************************************************
  * int flash_erase(uint64_t* pflash);
  *  @brief 	: Erase one page
