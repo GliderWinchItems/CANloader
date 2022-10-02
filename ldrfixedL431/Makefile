@@ -78,7 +78,7 @@ C_SOURCES += Ourtasks/syscalls.c
 C_SOURCES += Ourtasks/system_reset.c
 C_SOURCES += Ourtasks/canwinch_ldrproto.c
 C_SOURCES += Ourtasks/flash_write.c
-C_SOURCES += Ourtasks/flash_write_fast.c
+#C_SOURCES += Ourtasks/flash_write_fast.c
 
 # ASM sources
 ASM_SOURCES =  \

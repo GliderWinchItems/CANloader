@@ -39,6 +39,7 @@ Plus unknown amount of write flash time.
 #include "system_reset.h"
 #include "main.h"
 #include "flash_write.h"
+#include "flash_write_fast.h"
 #include "can_iface.h"
 #include "morse.h"
 #include "system_reset.h"
@@ -46,6 +47,7 @@ Plus unknown amount of write flash time.
 #include "crc-32_hw.h"
 
 extern void* _begin_flash; // App load adddres: Defined in ldr.ld file
+extern uint16_t __flashfast;
 
 extern uint32_t dtwmsnext; // DTW time ct for squelching
 extern struct CAN_CTLBLOCK* pctl1;
@@ -337,6 +339,7 @@ static void copypayload(uint8_t* pc, int8_t count)
  * static void do_flash_cycle(void);
  * @brief	: Do a flash erase:write:verify cycle
  * ************************************************************************************** */
+
 static int do_flash_cycle(void)
 {
 	int ret;
@@ -373,7 +376,9 @@ static int do_flash_cycle(void)
 
 		if(ct >= 3) return ret;
 
+		/* Flash double word by double word. */			
 		ret = flash_write((uint64_t*)padd, &flblkbuff.fb.u64[0] ,flashblocksize/8);
+
 		if (ret != 0)
 		{
 			printf("F WRT ERR: padd: 0x%08X ret: %d ct: %d\n\r",(unsigned int)padd, (int)ret, (int)ct);
@@ -382,8 +387,6 @@ static int do_flash_cycle(void)
 		{
 			printf("F WRT OK: padd: 0x%08X ret: %d ct: %d\n\r",(unsigned int)padd, (int)ret, (int)ct);
 		}
-
-	
 
 		uint32_t* psram      = &flblkbuff.fb.u32[0];
 		uint32_t* pflash     = (uint32_t*)padd;

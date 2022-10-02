@@ -61,6 +61,7 @@ _Min_Stack_Size = 0x400; /* required amount of stack */
 /* Address of application jump address */
 __appjump    = 0x08008004;
 __appbegin   = 0x08008000;
+__flashfast  = 0x10000000;
 
 /* Specify the memory areas */
 MEMORY
@@ -170,6 +171,15 @@ SECTIONS
     _edata = .;        /* define a global symbol at data end */
   } >RAM AT> FLASH
 
+  .sramcode :
+  {
+  . = ALIGN(8);
+    _sramcode_start = .;        /* create a global symbol at data start */
+    KEEP (*(.sramcode))           /* .sramcode sections */
+    KEEP (*(.sramcode*))          /* .sramcode* sections */
+    . = ALIGN(8);
+    _sramcode_end = .;
+  } > FLASH
   
   /* Uninitialized data section */
   . = ALIGN(4);
