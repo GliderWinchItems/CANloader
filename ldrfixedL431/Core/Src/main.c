@@ -201,7 +201,7 @@ int main(void)
   /* CAN ID for this node is passed in to make from command line. */
   unsigned int i_am_canid = I_AM_CANID;
 
-   printf("\n\n\n\r######### ldrfixedL431 STARTS, 0x%0X",i_am_canid);
+   printf("\n\n\n\r######### ldrfixedL431 STARTS 1, 0x%0X",i_am_canid);
 
 /* Setup TX linked list for CAN  */
    // CAN1 (CAN_HandleTypeDef *phcan, uint8_t canidx, uint16_t numtx, uint16_t numrx);
@@ -304,8 +304,9 @@ int main(void)
 // RX msgs begin immediately following enabling CAN interrupts.  Get 'peek' 'toss' of RX msgs going soon.
 //  can_driver_enable_interrupts(); // Enable CAN interrupts
 /* -------------- Get the program loader stuff setup -------------------------------------- */
-  canwinch_ldrproto_init(IAMUNITNUMBER);
-
+//  canwinch_ldrproto_init(IAMUNITNUMBER);
+  canwinch_ldrproto_init(i_am_canid);
+    
 //  uint32_t* pcrcblk = (uint32_t*)((uint32_t)((uint8_t*)*&__appjump + 7 + 0)); // First table entry = number of crcblocks  
 //  printf(  "(uint32_t)*pcrcblk: %08X\n\r", (unsigned int)*pcrcblk++ );
 
@@ -718,7 +719,6 @@ static void MX_GPIO_Init(void)
   GPIO_InitTypeDef GPIO_InitStruct = {0};
 
   /* GPIO Ports Clock Enable */
-  __HAL_RCC_GPIOH_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
 
